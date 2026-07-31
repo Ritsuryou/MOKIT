@@ -473,25 +473,28 @@ subroutine fch_u2r_wrap(fchname, new_fch)
  end if
 end subroutine fch_u2r_wrap
 
-subroutine fch2dal_wrap(fchname, dalname)
+subroutine fch2dal_wrap(fchname, dalname, prt)
  implicit none
  integer :: i, RENAME
  character(len=240) :: molname, dalname1, molname1
  character(len=240), intent(in) :: fchname
  character(len=240), intent(in), optional :: dalname
  character(len=248) :: buf
+ logical, intent(in) :: prt
 
  buf = 'fch2dal '//TRIM(fchname)
- call run_command(TRIM(buf), .true., .false.)
+ call run_command(TRIM(buf), .false., prt)
 
  if(PRESENT(dalname)) then
-  call find_specified_suffix(dalname, '.dal', i)
-  molname = dalname(1:i-1)//'.mol'
   call find_specified_suffix(fchname, '.fch', i)
   dalname1 = fchname(1:i-1)//'.dal'
   molname1 = fchname(1:i-1)//'.mol'
-  i = RENAME(TRIM(dalname1), TRIM(dalname))
-  i = RENAME(TRIM(molname1), TRIM(molname))
+  if(TRIM(dalname) /= TRIM(dalname1)) then
+   call find_specified_suffix(dalname, '.dal', i)
+   molname = dalname(1:i-1)//'.mol'
+   i = RENAME(TRIM(dalname1), TRIM(dalname))
+   i = RENAME(TRIM(molname1), TRIM(molname))
+  end if
  end if
 end subroutine fch2dal_wrap
 
@@ -1032,6 +1035,38 @@ subroutine gvb_exclude_XH_A_wrap(datname, gmsname, reverted, new_inp)
  read(buf(i+1:),*) new_inp
 end subroutine gvb_exclude_XH_A_wrap
 
+! a wrapper of make_orb_resemble() in gaussian.py
+subroutine make_orb_resemble_wrap(target_fch, ref_fch, nmo)
+ implicit none
+ integer :: i, j, fid
+ integer, optional :: nmo
+ character(len=240) :: pyname, outname
+ character(len=240), intent(in) :: target_fch, ref_fch
+ character(len=500) :: buf
+
+ call find_specified_suffix(target_fch, '.fch', i)
+ call get_a_random_int(j)
+ write(pyname,'(A,I0,A)') target_fch(1:i-1)//'_', j, '.py'
+ write(outname,'(A,I0,A)') target_fch(1:i-1)//'_', j, '.out'
+
+ open(newunit=fid,file=TRIM(pyname),status='replace')
+ write(fid,'(A)') 'from mokit.lib.gaussian import make_orb_resemble'
+ write(fid,'(A)') 'target_fch = "'//TRIM(target_fch)//'"'
+ write(fid,'(A)') 'ref_fch = "'//TRIM(ref_fch)//'"'
+ if(PRESENT(nmo)) then
+  write(fid,'(A,I0)') 'nmo = ', nmo
+  write(fid,'(A)') 'make_orb_resemble(target_fch, ref_fch, nmo, True)'
+ else
+  write(fid,'(A)') 'make_orb_resemble(target_fch=target_fch, ref_fch=ref_fch, a&
+                   &lign=True)'
+ end if
+ close(fid)
+
+ buf = 'python '//TRIM(pyname)//' > '//TRIM(outname)//' 2>&1'
+ call run_command(TRIM(buf), .false., .true.)
+ call delete_files(2, [pyname, outname])
+end subroutine make_orb_resemble_wrap
+
 end module util_wrapper
 
 subroutine prt_orca_2mkl_error(fname)
@@ -1041,8 +1076,9 @@ subroutine prt_orca_2mkl_error(fname)
  write(6,'(/,A)') 'ERROR: failed to call ORCA utility orca_2mkl. 3 possible rea&
                   &sons:'
  write(6,'(A)') '(1) Your ORCA environment variables are incorrect.'
- write(6,'(A)') '(2) ORCA utility orca_2mkl does not exist.'
- write(6,'(A)') '(3) The file '//TRIM(fname)//' may be incomplete.'
+ write(6,'(A)') '(2) ORCA utility orca_2mkl does not exist due to installation &
+                &problem.'
+ write(6,'(A)') '(3) The file '//TRIM(fname)//' may be problematic.'
  stop
 end subroutine prt_orca_2mkl_error
 

@@ -499,12 +499,12 @@ program main
  i = 0
 end program main
 
-! Get the wave function of a rotated molecule. The original coordinates are
-!  provided in fchname, while the new coordinates are provided in coor_file
-!  (which is a .xyz or .gjf file).
+! Get the wave function of a molecule after rotation. The original coordinates
+! are provided in fchname, while the rotated coordinates are provided in coor_file
+! (which is .xyz/.gjf)
+! Assuming fchname = a.fch, the generated file would be a_r.fch
 ! Note: the one-to-one correspondence of element symbols in two files will not
 !  be checked, so it is assumed that you already ensure the correspondence.
-! Assuming the input file is a.fch, the output file would be a_r.fch
 subroutine rotate_atoms_wfn(fchname, coor_file)
  implicit none
  integer :: i, natom
@@ -527,12 +527,11 @@ subroutine rotate_atoms_wfn(fchname, coor_file)
  deallocate(coor)
 end subroutine rotate_atoms_wfn
 
-! Get the wave function of a rotated molecule. The original coordinates are
-!  provided in fchname, while the new coordinates are provided in the array
-!  coor. The rotated molecule and wfn are stored in new_fch.
+! Get the wave function of a molecule after rotation. The original coordinates
+! are provided in fchname, while the rotated coordinates are provided in the
+! array `coor`. The rotated molecule and wave function would be stored in new_fch.
 ! Note: the one-to-one correspondence of element symbols will not be checked,
 !  so it is assumed that you already ensure the correspondence.
-! Assuming the input file is a.fch, the output file would be a_r.fch
 subroutine rotate_atoms_wfn2(fchname, natom, coor, new_fch)
  use fch_content, only: nbf, nif, is_uhf, ncontr, shell_type, alpha_coeff, &
   beta_coeff, tot_dm, spin_dm, read_fch, coor0=>coor, free_arrays_in_fch_content
@@ -544,8 +543,9 @@ subroutine rotate_atoms_wfn2(fchname, natom, coor, new_fch)
  integer, intent(in) :: natom
 !f2py intent(in) :: natom
  integer, allocatable :: no_mark(:), mark(:,:)
- real(kind=8) :: rmsd_v, trans1(3), trans2(3), rotation(3,3), rot5d(5,5), &
-  rot6d(6,6)
+ real(kind=8), parameter :: thres = 1d-6
+ real(kind=8) :: rmsd_v, maxv, abs_mean, trans1(3), trans2(3), rotation(3,3), &
+  rot5d(5,5), rot6d(6,6)
  real(kind=8), allocatable :: rot7f(:,:), rot10f(:,:), rot9g(:,:), rot15g(:,:),&
   rot11h(:,:), rot21h(:,:)
  real(kind=8), intent(in) :: coor(3,natom)
@@ -559,19 +559,25 @@ subroutine rotate_atoms_wfn2(fchname, natom, coor, new_fch)
  call read_fch(fchname, is_uhf)
 
  call rmsd(natom, coor0, coor, rmsd_v, trans1, trans2, rotation)
- ! coor0 will be translated to its own center and rotated after calling the
- ! subroutine rmsd
+ ! coor0 will be translated to its own center, rotated and translated to the
+ ! center of coor after calling rmsd()
 
- if(rmsd_v > 0.03d0) then
-  write(6,'(/,A)') 'Warning in subroutine rotate_atoms_wfn2: RMSD value > 0.03.'
-  write(6,'(A)') 'Anyway, the program will continue, but you should be aware of&
-                 & what you are'
-  write(6,'(A,I0)') 'doing. fchname='//TRIM(fchname)//', natom=', natom
-  write(6,'(A,F12.6)') 'RMSD=', rmsd_v
+ ! if the molecule is simply translated and without any rotation, MO coefficients
+ ! are unchanged
+ call check_unity(3, rotation, maxv, abs_mean)
+ if(maxv<thres .and. abs_mean<thres) then
+  call write_fch(new_fch)
+  call free_arrays_in_fch_content()
+  return
  end if
 
- ! now translate coor0 to the frame of coor
- forall(i = 1:natom) coor0(:,i) = coor0(:,i) - trans2
+ if(rmsd_v > 0.08d0) then
+  write(6,'(/,A)') 'Warning in subroutine rotate_atoms_wfn2: RMSD value > 0.08.'
+  write(6,'(A)') 'Anyway, the program will continue, but you should be aware of&
+                 & what you are'
+  write(6,'(A)') 'doing. fchname='//TRIM(fchname)
+  write(6,'(A,I0,A,F12.6)') 'natom=', natom, ', RMSD=', rmsd_v
+ end if
 
  ! merge alpha_coeff and beta_coeff for easier manipulation
  nif1 = nif
@@ -989,6 +995,8 @@ end subroutine get_bas_begin_idx_from_shltyp
 ! Calculate the RMSD value of two molecules in .xyz/.gjf/.fch/.pdb files.
 ! This subroutine assumes that the atomic labels are in one-to-one correspondence
 ! in two files.
+! A new .xyz file will be generated for fname2, which stores new Cartesian
+! coordinates of the molecule 2.
 subroutine rmsd_wrapper(fname1, fname2, reorder, rmsd_v)
  use periodic_table, only: write_xyz
  implicit none
@@ -1110,7 +1118,11 @@ subroutine rmsd(natom, coor1, coor2, rmsd_v, trans1, trans2, rotation)
 
  rmsd_v = DSQRT(SUM(work)/DBLE(natom))
  deallocate(work)
- forall(i = 1:natom) coor1(:,i) = coor1(:,i) - trans1
+ ! If we want a new set of Cartesian coordinates (stored in coor1) which has
+ ! maximum overlap with coor2, here `trans2` is supposed to be extracted.
+ do i = 1, natom, 1
+  coor1(:,i) = coor1(:,i) - trans2
+ end do ! for i
 end subroutine rmsd
 
 ! Calculate the RMSD value of two molecules, where permutations of atomic labels
@@ -1708,7 +1720,7 @@ subroutine geom_lin_intrplt(gjfname1, gjfname2, n)
  call read_elem_and_coor_from_gjf(gjfname2, natom, elem, nuc, coor2, charge, mult)
  deallocate(nuc)
 
- ! in case that two geometries have different orientations, let's do DMSD first
+ ! in case that two geometries have different orientations, let's do RMSD first
  call rmsd(natom, coor1, coor2, rmsd_v, trans1, trans2, rotation)
  if(rmsd_v < 1d-2) then
   write(6,'(/,A)') 'Warning from subroutine geom_lin_intrplt: the initial geome&

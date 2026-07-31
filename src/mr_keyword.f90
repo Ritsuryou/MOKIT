@@ -211,7 +211,13 @@ module mr_keyword
  logical :: mcpdft_force = .false.! whether to calculate MC-PDFT force
  logical :: caspt2_force = .false.! whether to calculate CASPT2 force
  logical :: nevpt2_force = .false.! whether to calculate NEVPT2 force
+ logical :: mrcisd_force = .false.! whether to calculate MRCISD force
  logical :: polar = .false.       ! whether to calculate molecular polarizability
+ logical :: casscf_polar = .false.! whether to calculate CASSCF polarizability
+ logical :: mcpdft_polar = .false.! whether to calculate MC-PDFT polarizability
+ logical :: caspt2_polar = .false.! whether to calculate CASPT2 polarizability
+ logical :: nevpt2_polar = .false.! whether to calculate NEVPT2 polarizability
+ logical :: mrcisd_polar = .false.! whether to calculate MRCISD polarizability
 
  logical :: block_mpi = .false.   ! OpenMP or MPI calling the Block program
  logical :: FIC = .false.         ! False/True for FIC-/SC-NEVPT2
@@ -220,7 +226,7 @@ module mr_keyword
  logical :: DLPNO = .false.       ! whether to turn on DLPNO-NEVPT2
  logical :: pop = .false.         ! whether to perform population analysis
  logical :: nmr = .false.         ! whether to calculate nuclear shielding
- logical :: ICSS = .false.        ! whether to calculate ICSS
+ logical :: icss = .false.        ! whether to calculate ICSS
  logical :: soc = .false.         ! whether to calculate spin-orbit coupling (SOC)
  logical :: excludeXH = .false.   ! whether to exclude inactive X-H bonds from GVB
  logical :: onlyXH = .false.      ! whether to keep only X-H bonds in GVB
@@ -259,7 +265,7 @@ module mr_keyword
  character(len=10) :: mcpdft_prog  = 'pyscf' ! PySCF/OpenMolcas/GAMESS
  character(len=10) :: mrcc_prog    = 'orca'
  character(len=10) :: cis_prog     = 'gaussian'
- character(len=10) :: polar_prog   = 'orca' ! polarizability program
+ character(len=10) :: polar_prog   = 'dalton' ! polarizability program
 
  character(len=240) :: mokit_root = ' '
  character(len=240) :: gau_path = ' '
@@ -850,7 +856,7 @@ end subroutine check_gms_path
    case('nmr')
     nmr = .true.
    case('icss')
-    ICSS = .true.; nmr = .true.
+    icss = .true.; nmr = .true.
    case('excludexh')
     excludeXH = .true.
    case('onlyxh')
@@ -977,8 +983,8 @@ subroutine prt_strategy()
  write(6,'(5(A,L1,3X))') 'DLPNO   = ',   DLPNO, 'F12     = ',     F12,&
       'HardWFN = ',hardwfn, 'CrazyWFN= ',crazywfn, 'OnlyXH  = ', onlyXH
 
- write(6,'(5(A,L1,3X))') 'BgCharge= ',   bgchg, 'Ana_Grad= ',  force,&
-      'Pop     = ',    pop, 'NMR     = ',    nmr, 'ICSS    = ', ICSS
+ write(6,'(5(A,L1,3X))') 'BgCharge= ',   bgchg, 'Ana_Grad= ',  force, &
+      'Pop     = ',    pop, 'NMR     = ',    nmr, 'ICSS    = ', icss
 
  write(6,'(5(A,L1,3X))') 'TDHF    = ',    tdhf, 'SA_CAS  = ',  sa_cas,&
       'Excited = ',excited, 'QD      = ',     QD, 'SOC     = ', SOC
@@ -986,11 +992,11 @@ subroutine prt_strategy()
  write(6,'(5(A,L1,3X))') 'Inherit = ', inherit, 'LocPair = ', LocPair,&
       'LocDocc = ',LocDocc, 'MixedSpin=',MixedSpin, 'RigidScan=',rigid_scan
 
- write(6,'(2(A,L1,3X),2(A,I2,3X),A)') 'RelaxScan=',relaxed_scan,'excludeXH=',&
-  excludeXH,'XMult   =',xmult,'NewMult =',new_mult,'GVB_conv= '//TRIM(GVB_conv)
+ write(6,'(3(A,L1,3X),2(A,I2,3X))') 'RelaxScan=',relaxed_scan,'excludeXH=',&
+  excludeXH,'Polar   = ',polar,'XMult   =',xmult,'NewMult =',new_mult
 
- write(6,'(A,I2,3X,2(A,I1,3X),A,I0)') 'Skip_UNO=', nskip_uno, 'CtrType = ', &
-      CtrType, 'MRCC_type=',mrcc_type, 'MaxM = ', maxM
+ write(6,'(A,I2,3X,2(A,I1,3X),A,I0,3X,A)') 'Skip_UNO=',nskip_uno,'CtrType = ',&
+      CtrType,'MRCC_type=',mrcc_type,'MaxM = ',maxM,'GVB_conv= '//TRIM(GVB_conv)
 
  write(6,'(A,F7.5,1X,A,F7.5)') 'LocalM  = '//TRIM(localm)//'  ON_thres= ',&
       on_thres, ' OtPDF='//TRIM(otpdf)//'  UNO_thres= ', uno_thres
@@ -1007,10 +1013,9 @@ end subroutine prt_strategy
 
 subroutine check_kywd_compatible()
  implicit none
- integer :: i
- logical :: alive(3)
  character(len=10) :: cas_prog
  character(len=43), parameter :: error_warn='ERROR in subroutine check_kywd_compatible: '
+ logical :: alive(3)
 
  write(6,'(/,A)') 'Check if the keywords are compatible with each other...'
 
@@ -1258,11 +1263,18 @@ subroutine check_kywd_compatible()
  end if
 
  alive = [readrhf, readuhf, readno]
- i = COUNT(alive .eqv. .true.)
- if(i > 1) then
+ if(COUNT(alive .eqv. .true.) > 1) then
   write(6,'(/,A)') error_warn//"more than one of 'readrhf',"
   write(6,'(A)') "'readuhf', and 'readno' are specified. These three keywords &
                  &are mutually exclusive."
+  stop
+ end if
+
+ alive = [nmr, icss, polar]
+ if(COUNT(alive .eqv. .true.) > 1)then
+  write(6,'(/,A)') error_warn//'more than one of NMR,ICSS,Polar'
+  write(6,'(A)') 'properties are requested. Currently only one property can be &
+                 &calculated in a job.'
   stop
  end if
 
@@ -1532,13 +1544,15 @@ subroutine check_kywd_compatible()
    if(mcpdft) mcpdft_force = .true.
    if(caspt2) caspt2_force = .true.
    if(nevpt2) nevpt2_force = .true.
+   if(mrcisd) mrcisd_force = .true.
   else ! no dynamic correlation calculation
    if(casscf) then
     casscf_force = .true.
     if(TRIM(casscf_prog) == 'psi4') then
      write(6,'(/,A)') error_warn
      write(6,'(A)') 'CASSCF analytical gradients are not supported in PSI4. Pleas&
-                    &e use another CASSCF_prog.'
+                    &e use another'
+     write(6,'(A)') 'CASSCF_prog.'
      stop
     end if
     if(sa_cas) then
@@ -1554,9 +1568,30 @@ subroutine check_kywd_compatible()
  end if
 
  if(casscf_force .and. cart .and. TRIM(casscf_prog)=='pyscf') then
-  write(6,'(/,A)') error_warn//"current version of PySCF can only compute force"
+  write(6,'(/,A)') error_warn//'current version of PySCF can only compute force'
   write(6,'(A)') 'using spherical harmonic basis functions.'
   stop
+ end if
+
+ if(polar) then
+  if(dyn_corr) then
+   if(mcpdft) mcpdft_polar = .true.
+   if(caspt2) caspt2_polar = .true.
+   if(nevpt2) nevpt2_polar = .true.
+   if(mrcisd) mrcisd_polar = .true.
+  else ! no dynamic correlation calculation
+   if(casscf) then
+    casscf_polar = .true.
+   else ! casscf = .false.
+    write(6,'(/,A)') error_warn//'GVB/GP/CASCI polarizability is'
+    write(6,'(A)') 'unsupported currently.'
+   end if
+  end if
+  if(iroot>0 .or. nstate>0) then
+   write(6,'(/,A)') error_warn//'polarizability of any excited state'
+   write(6,'(A)') 'is unsupported currently.'
+   stop
+  end if
  end if
 
  if(mrmp2 .and. X2C) then
@@ -1567,8 +1602,8 @@ subroutine check_kywd_compatible()
 
  if(nevpt2) then
   if(DKH2 .and. (TRIM(nevpt_prog)=='pyscf' .or. TRIM(nevpt_prog)=='bdf')) then
-   write(6,'(/,A)') error_warn//'NEVPT2 with DKH2 is not supported by PySCF or BDF.'
-   write(6,'(A)') 'You can use NEVPT_prog=Molpro or ORCA.'
+   write(6,'(/,A)') error_warn//'NEVPT2 with DKH2 is not supported by PySCF'
+   write(6,'(A)') 'or BDF. You can use NEVPT_prog=Molpro or ORCA.'
    stop
   end if
   if(bgchg .and. TRIM(nevpt_prog)=='bdf') then

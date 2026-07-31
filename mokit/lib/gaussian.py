@@ -666,6 +666,11 @@ def gen_fcidump(fchname, nacto, nacte, mem=4000):
     from_integrals(int_file, h1eff, eri_cas, nacto, nacte, ecore, ms=mol.spin)
 
 
+# I do not know what happens to this function. The obtained MOs from projection
+# are not the same as those MOs from Gaussian, and not same as those from MOKIT
+# of one year ago (if my memory is correct), no matter that `align` is True or
+# False. I'm confused. I have checked that the function rotate_atoms_wfn2()
+# works correctly. I have to put this problem to the next release candidate.
 def make_orb_resemble(target_fch, ref_fch, nmo=None, align=False):
     '''
     make a set of target MOs resembles the reference MOs
@@ -675,12 +680,13 @@ def make_orb_resemble(target_fch, ref_fch, nmo=None, align=False):
     target_fch: the .fch file which holds MOs to be updated
     ref_fch: the .fch file which holds reference MOs
     nmo: indices 1~nmo MOs in ref_fch will be labeled as reference MOs
-    align: whether to align two molecules
+    align: Align two molecules before MO projection. This is an internal procedure
+           and thus does not affect the coordinates in target_fch or ref_fch.
     If nmo is not given, it will be set as na (the number of alpha electrons)
     '''
     from pyscf import gto
-    from mokit.lib.rwgeom import read_coor_from_fch
-    from mokit.lib.mirror_wfn import rotate_atoms_wfn2
+    from mokit.lib.rwgeom import read_elem_and_coor_from_xyz
+    from mokit.lib.mirror_wfn import rmsd_wrapper, rotate_atoms_wfn2
     from mokit.lib.mo_svd import orb_resemble
 
     nmo_given = True
@@ -689,9 +695,18 @@ def make_orb_resemble(target_fch, ref_fch, nmo=None, align=False):
         nmo, nb = read_na_and_nb_from_fch(ref_fch)
         # nmo default: the number of alpha occupied orbitals
 
+    natom = read_natom_from_fch(target_fch)
+    natom1 = read_natom_from_fch(ref_fch)
+    if natom != natom1:
+        print('target_fch = '+target_fch)
+        print('ref_fch = '+ref_fch)
+        raise ValueError('the number of atoms are not equal in two files.')
+
     if align is True:
-        natom = read_natom_from_fch(target_fch)
-        coor = read_coor_from_fch(target_fch, natom)
+        rmsd_v = rmsd_wrapper(target_fch, ref_fch, reorder=False)
+        xyzname = ref_fch[0:ref_fch.rindex('.fch')]+'_new.xyz'
+        elem, coor = read_elem_and_coor_from_xyz(xyzname, natom)
+        os.remove(xyzname)
         ref_fch1 = ref_fch[0:ref_fch.rindex('.fch')]+'_rot.fch'
         rotate_atoms_wfn2(ref_fch, natom, coor, ref_fch1)
     else:
@@ -706,7 +721,8 @@ def make_orb_resemble(target_fch, ref_fch, nmo=None, align=False):
     nbf2, nif2 = read_nbf_and_nif_from_fch(ref_fch1)
     mo2 = fch2py(ref_fch1, nbf2, nif2, 'a')
 
-    # rotate alpha MOs of target molecule at target basis to resemble known orbitals
+    # rotate alpha MOs of the target molecule at target basis to resemble known
+    # orbitals
     mo1 = orb_resemble(nbf1, nif1, nbf2, nmo, mo2[:,:nmo], ao_S1, cross_S)
     noon = np.zeros(nif1)
     py2fch(target_fch, nbf1, nif1, mo1, 'a', noon, False, False)

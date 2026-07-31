@@ -54,7 +54,7 @@ program main
   write(6,'(A)')   '  MRCISD_prog=OpenMolcas/Molpro/ORCA/Gaussian/GAMESS/PSI4/Dalton'
   write(6,'(A)')   '      CtrType=1/2/3 for uc-/ic-/FIC-MRCISD'
   write(6,'(A)')   '    MRCC_prog=ORCA'
-  write(6,'(A,/)') '   Polar_prog=ORCA/OpenMolcas/Gaussian'
+  write(6,'(A,/)') '   Polar_prog=Dalton/ORCA/OpenMolcas/Gaussian'
   stop
  case('-t','--testprog')
   call check_mokit_root()
@@ -868,7 +868,7 @@ subroutine do_minimal_basis_gvb()
  write(6,'(A)') 'GVB/STO-6G finished. Rotate MOs at target basis to resemble GV&
                 &B/STO-6G orbitals...'
 
- call gen_fch_from_gjf(gjfname, hf_fch)
+ call gen_fch_from_gjf(gjfname, hf_fch, .false., .false.)
  call prt_orb_resemble_py_script(nproc, hf_fch, gvb_nofch)
  call submit_pyscf_job(pyname, .true.)
 
@@ -1093,91 +1093,6 @@ subroutine read_int_in_buf(buf, key, k)
   stop
  end if
 end subroutine read_int_in_buf
-
-! call Gaussian to generate fch file from a given gjf file
-subroutine gen_fch_from_gjf(gjfname, hf_fch)
- use util_wrapper, only: formchk
- use mr_keyword, only: gau_path
- implicit none
- integer :: i, j, mult, fid1, fid2, SYSTEM
- character(len=4) :: method
- character(len=240) :: buf, tmpchk, tmpgjf, tmpout
- character(len=240), intent(in) :: gjfname, hf_fch
-
- call read_mult_from_gjf(gjfname, mult)
- method = 'RHF'
- if(mult > 1) method = 'ROHF'
-
- call get_a_random_int(i)
- write(tmpchk,'(I0,A)') i,'.chk'
- write(tmpgjf,'(I0,A)') i,'.gjf'
- write(tmpout,'(I0,A)') i,'.log'
- open(newunit=fid1,file=TRIM(gjfname),status='old',position='rewind')
- open(newunit=fid2,file=TRIM(tmpgjf),status='replace')
- write(fid2,'(A)') '%chk='//TRIM(tmpchk)
-
- do while(.true.)
-  read(fid1,'(A)') buf
-  if(buf(1:1) == '#') exit
-  if(buf(1:4) == '%chk') cycle
-  write(fid2,'(A)') TRIM(buf)
- end do ! for while
-
- i = INDEX(buf,' ')
- j = INDEX(buf,'/')
- if(i > j) then
-  write(6,'(A)') 'ERROR in subroutine gen_fch_from_gjf: wrong syntax in file '&
-                  //TRIM(gjfname)
-  close(fid1)
-  close(fid2,status='delete')
-  stop
- end if
-
- buf = buf(1:i)//TRIM(method)//TRIM(buf(j:))//' guess(only,save) nosymm 5D 7F&
-                                              & int=nobasistransform'
- write(fid2,'(A)') TRIM(buf)
-
- do while(.true.)
-  read(fid1,'(A)',iostat=i) buf
-  if(i /= 0) exit
-  write(fid2,'(A)') TRIM(buf)
- end do ! for while
- close(fid1)
- close(fid2)
-
- i = SYSTEM(TRIM(gau_path)//' '//TRIM(tmpgjf))
- if(i /= 0) then
-  write(6,'(/,A)') "ERROR in subroutine gen_fch_from_gjf: Gaussian 'ONLY'-type&
-                  & job failed."
-  write(6,'(A)') 'You can open file '//TRIM(tmpout)//' and check why.'
-  stop
- end if
-
- call formchk(tmpchk, hf_fch)
- call delete_files(3, [tmpchk, tmpgjf, tmpout])
-end subroutine gen_fch_from_gjf
-
-! read spin multiplicity from Gaussian gjf file
-subroutine read_mult_from_gjf(gjfname, mult)
- implicit none
- integer :: charge, nblank, fid
- integer, intent(out) :: mult
- character(len=240) :: buf
- character(len=240), intent(in) :: gjfname
-
- mult = 1
- open(newunit=fid,file=TRIM(gjfname),status='old',position='rewind')
- nblank = 0
-
- do while(.true.)
-  read(fid,'(A)') buf
-  if(LEN_TRIM(buf) == 0) nblank = nblank + 1
-  if(nblank == 2) exit
- end do ! for while
-
- read(fid,*) charge, mult
- close(fid)
-end subroutine read_mult_from_gjf
 
 ! create/print a Python script to project MOs from mb_fch to rem_fch
 subroutine prt_orb_resemble_py_script(nproc, rem_fch, mb_fch)

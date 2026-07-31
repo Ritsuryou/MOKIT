@@ -4,6 +4,11 @@
 !TODO: check which QC program supports CP-CASCI calculation, check which
 ! QC program has correct CASCI analytical gradients
 
+!TODO: If spin contamination is found, call csf_solver automatically if
+! pyscf-forge is installed. If pyscf-forge is not installed, call fix_spin
+! automatically. If the user specifies one of csf_solver/fix_spin explicitly,
+! do as the user says.
+
 module icss_param
  implicit none
  integer :: ngrid(3)
@@ -17,9 +22,9 @@ subroutine do_cas(scf)
   hf_fch, datname, nacte_wish, nacto_wish, gvb, casnofch, casci_prog, &
   casscf_prog, dmrgci_prog, dmrgscf_prog, gau_path, molcas_omp, molcas_path, &
   orca_path, molpro_path, bdf_path, psi4_path, check_gms_path, gms_path, &
-  gms_scr_path, gms_dat_path, dalton_mpi, bgchg, chgname, casci_force, &
-  casscf_force, prt_strategy, RI, nmr, ICSS, on_thres, iroot, xmult, new_mult,&
-  dyn_corr
+  gms_scr_path, gms_dat_path, polar_prog, dalton_mpi, bgchg, chgname, casci_force,&
+  casscf_force, casscf_polar, prt_strategy, RI, nmr, ICSS, on_thres, iroot, &
+  xmult, new_mult, dyn_corr
  use mol, only: charge, mult, nbf, nif, npair, nopen, npair0, ndb, casci_e, &
   casscf_e, nacta, nactb, nacto, nacte, gvb_e, ptchg_e, nuc_pt_e, natom, grad
  use util_wrapper, only: bas_fch2py_wrap, formchk, unfchk, gbw2mkl, mkl2gbw, &
@@ -189,8 +194,8 @@ subroutine do_cas(scf)
   stop
  end if
 
- write(6,'(4(A,I0),A,L1)') 'doubly_occ=', ndb, ', nvir=', nvir, ', Root=', &
-                           iroot, ', Xmult=', xmult, ', RI=', RI
+ write(6,'(4(A,I0),2(A,L1))') 'doubly_occ=', ndb, ', nvir=', nvir, ', Root=', &
+                   iroot, ', Xmult=', xmult, ', RI=', RI, ', Force=', cas_force
  write(6,'(2(A,I0))') 'No. of active alpha/beta e = ', nacta,'/',nactb
 
  if(scf) then ! (DMRG-)CASSCF
@@ -396,8 +401,19 @@ subroutine do_cas(scf)
   outname = TRIM(proname)//'.out'
   gradname = TRIM(proname)//'.engrad'
   call fch2mkl_wrap(fchname, mklname, REPEAT(' ',30), .true.)
-
-  call prt_cas_orca_inp(inpname, scf, .false.)
+  ! If CASSCF polarizability is required by the user and Polar_prog=CASSCF_prog=
+  ! ORCA, the CASSCF orbital optimization and polarizability calculations can
+  ! share the same input file, which would save some computational time. In the
+  ! subroutine do_polar, we will make a copy of the ORCA CASSCF output file and
+  ! reuse it in that subroutine.
+  if(casscf_polar .and. TRIM(polar_prog)=='orca') then
+   call prt_cas_orca_inp(inpname, scf, .true.)
+   write(6,'(A)') 'CASSCF_prog=Polar_prog=ORCA detected. Merge CASSCF energy and&
+                  & polarizability'
+   write(6,'(A)') 'into one job.'
+  else
+   call prt_cas_orca_inp(inpname, scf, .false.)
+  end if
   if(bgchg) call add_bgcharge2inp_wrap(chgname, inpname)
   ! if bgchg = .True., .inp and .mkl file will be updated
   call mkl2gbw(mklname)
@@ -479,7 +495,7 @@ subroutine do_cas(scf)
  case('dalton')
   inpname = TRIM(proname)//'.dal'
   outname = TRIM(proname)//'.out'
-  call fch2dal_wrap(fchname, inpname)
+  call fch2dal_wrap(fchname, inpname, .true.)
   call prt_cas_dalton_inp(inpname, scf, cas_force)
   if(bgchg) call add_bgcharge2inp_wrap(chgname, inpname)
   call submit_dalton_job(proname, mem, nproc, dalton_mpi, .false., .false., &
@@ -565,7 +581,7 @@ subroutine do_cas(scf)
  end if
 
  if(nmr) then
-  call prt_cas_dalton_nmr_inp(casnofch, scf, ICSS, iroot, nfile)
+  call prt_cas_dalton_prop_inp(casnofch, scf, ICSS, .false., iroot, nfile)
   inpname = TRIM(proname)//'_NMR'
                                                    ! sirius, noarch, del_sout
   call submit_dalton_job(inpname,mem,nproc,dalton_mpi,.false.,.false.,.false.)
@@ -910,8 +926,8 @@ subroutine prt_cas_orca_inp(inpname, scf, polar)
   write(6,'(A,I0)') 'iroot=', iroot
   stop
  end if
- call reduce_nproc_and_enlarge_mem(nproc, mem, 2, nproc1, mem1)
 
+ call reduce_nproc_and_enlarge_mem(nproc, mem, 2, nproc1, mem1)
  call find_specified_suffix(inpname, '.inp', i)
  inpname1 = inpname(1:i-1)//'.t'
  open(newunit=fid1,file=TRIM(inpname),status='old',position='rewind')
@@ -949,7 +965,13 @@ subroutine prt_cas_orca_inp(inpname, scf, polar)
   write(fid2,'(A)') ' tpre 0.0'
   write(fid2,'(A)') ' Etol 1e-7'
   write(fid2,'(A)') ' Rtol 1e-7'
-  write(fid2,'(A)') ' MaxIter 100'
+  if(crazywfn) then
+   write(fid2,'(A)') ' MaxIter 1000'
+  else if(hardwfn) then
+   write(fid2,'(A)') ' MaxIter 500'
+  else
+   write(fid2,'(A)') ' MaxIter 100'
+  end if
   write(fid2,'(A,I0,A)') ' NewBlock ',mult,' *'
   write(fid2,'(A,I0)') '  nroots ', iroot+1
   write(fid2,'(A)') '  excitations none'
@@ -1166,18 +1188,19 @@ subroutine prt_cas_psi4_inp(inpname, scf)
 end subroutine prt_cas_psi4_inp
 
 ! print CASCI/CASSCF keywords into a given Dalton input file
-subroutine prt_cas_dalton_inp(inpname, scf, force)
+subroutine prt_cas_dalton_inp(dalname, scf, force)
  use mol, only: mult, ndb, nacto, nacte
- use mr_keyword, only: DKH2
+ use mr_keyword, only: DKH2, hardwfn, crazywfn
  implicit none
  integer :: i, fid, fid1, RENAME
- character(len=240) :: buf, inpname1
- character(len=240), intent(in) :: inpname
+ character(len=240) :: buf, dalname1
+ character(len=240), intent(in) :: dalname
  logical, intent(in) :: scf, force
 
- inpname1 = TRIM(inpname)//'.t'
+ call find_specified_suffix(dalname, '.dal', i)
+ dalname1 = dalname(1:i-1)//'.t'
 
- open(newunit=fid1,file=TRIM(inpname1),status='replace')
+ open(newunit=fid1,file=TRIM(dalname1),status='replace')
  write(fid1,'(A)') '**DALTON INPUT'
  if(DKH2) write(fid1,'(A)') '.DOUGLAS-KROLL'
  if(force) then
@@ -1203,19 +1226,27 @@ subroutine prt_cas_dalton_inp(inpname, scf, force)
   write(fid1,'(A,/,A)') '.MAX CI','500'
   write(fid1,'(A,/,A)') '.MAX MACRO ITERATIONS','50'
   write(fid1,'(A,/,A)') '.MAX MICRO ITERATIONS','200'
+  if(hardwfn) then
+   write(fid1,'(A,/,A)') '.CI PHP MATRIX','400'
+  else if(crazywfn) then
+   ! Dalton MCSCF uses CSF by default, a large figure is not needed
+   write(fid1,'(A,/,A)') '.CI PHP MATRIX','800'
+  else
+   write(fid1,'(A,/,A)') '.CI PHP MATRIX','200'
+  end if
  else
   write(fid1,'(A)') '*CI INPUT'
   write(fid1,'(A,/,A)') '.MAX ITERATIONS','500'
  end if
  write(fid1,'(A,/,A)') '*PRINT LEVELS', '.CANONI'
 
- open(newunit=fid,file=TRIM(inpname),status='old',position='rewind')
+ open(newunit=fid,file=TRIM(dalname),status='old',position='rewind')
  do while(.true.)
   read(fid,'(A)') buf
   if(buf(1:12) == '*ORBITAL INP') exit
  end do ! for while
-
  BACKSPACE(fid)
+
  do while(.true.)
   read(fid,'(A)',iostat=i) buf
   if(i /= 0) exit
@@ -1224,8 +1255,9 @@ subroutine prt_cas_dalton_inp(inpname, scf, force)
  end do ! for while
 
  if(i /= 0) then
-  write(6,'(/,A)') "ERROR in subroutine prt_cas_dalton_inp: no '**END OF INP' f&
-                   &ound in file "//TRIM(inpname)
+  write(6,'(/,A)') 'ERROR in subroutine prt_cas_dalton_inp: no "**END OF INP" f&
+                   &ound in file'
+  write(6,'(A)') TRIM(dalname)
   close(fid1,status='delete')
   close(fid)
   stop
@@ -1235,79 +1267,97 @@ subroutine prt_cas_dalton_inp(inpname, scf, force)
  write(fid1,'(A)') '**END OF INPUT'
  close(fid,status='delete')
  close(fid1)
- i = RENAME(TRIM(inpname1), TRIM(inpname))
+
+ i = RENAME(TRIM(dalname1), TRIM(dalname))
 end subroutine prt_cas_dalton_inp
 
-! print CASSCF NMR keywords into a given Dalton input file
-subroutine prt_cas_dalton_nmr_inp(fchname, scf, ICSS, iroot, nfile)
+! print CASSCF property keywords into a given Dalton input file
+subroutine prt_cas_dalton_prop_inp(fchname, scf, icss, polar, iroot, nfile)
  use mol, only: mult, ndb, nacto, nacte
- use mr_keyword, only: DKH2
+ use mr_keyword, only: DKH2, hardwfn, crazywfn
  use util_wrapper, only: fch2dal_wrap
  implicit none
  integer :: i, fid, fid1, RENAME
  integer, intent(in) :: iroot
  ! 0 for ground state, 1 for the first excited state
  integer, intent(out) :: nfile
- character(len=240) :: buf, dalname, molname, olddal, oldmol
+ character(len=240) :: buf, dalname, dalname1
  character(len=240), intent(in) :: fchname
- logical, intent(in) :: scf, ICSS
+ logical, intent(in) :: scf, icss, polar
 
- i = INDEX(fchname, '.fch', back=.true.)
- olddal = fchname(1:i-1)//'.dal'
- oldmol = fchname(1:i-1)//'.mol'
-
- i = INDEX(fchname, '_NO.fch', back=.true.)
- if(i == 0) i = INDEX(fchname, '.fch')
- dalname = fchname(1:i-1)//'_NMR.dal'
- molname = fchname(1:i-1)//'_NMR.mol'
- call fch2dal_wrap(fchname)
- i = RENAME(TRIM(oldmol), TRIM(molname))
-
- open(newunit=fid,file=TRIM(dalname),status='replace')
- write(fid,'(A)') '**DALTON INPUT'
- if(DKH2) write(fid,'(A)') '.DOUGLAS-KROLL'
- write(fid,'(A)') '.RUN PROPERTIES'
- write(fid,'(A)') '**WAVE FUNCTIONS'
- if(scf) then
-  write(fid,'(A)') '.MCSCF'
+ call find_specified_suffix(fchname, '_NO.fch', i)
+ if(i == 0) call find_specified_suffix(fchname, '.fch', i)
+ if(polar) then
+  dalname = fchname(1:i-1)//'_pol.dal'
+  dalname1 = fchname(1:i-1)//'_pol.t'
  else
-  write(fid,'(A)') '.CI'
+  dalname = fchname(1:i-1)//'_NMR.dal'
+  dalname1 = fchname(1:i-1)//'_NMR.t'
  end if
- write(fid,'(A,/,A)') '*CONFIGURATION INPUT', '.SPIN MULTIPLICITY'
- write(fid,'(I0)') mult
- write(fid,'(A,/,I0)') '.INACTIVE ORBITALS', ndb
- write(fid,'(A,/,I0)') '.CAS SPACE', nacto
- write(fid,'(A,/,I0)') '.ELECTRONS', nacte
- if(scf) then
-  write(fid,'(A)') '*OPTIMIZATION'
-  write(fid,'(A,/,A)') '.MAX CI','500'
-  write(fid,'(A,/,A)') '.MAX MICRO ITERATIONS','200'
-  write(fid,'(A,/,A)') '.SYM CHECK','-1'
-  if(iroot > 0) write(fid,'(A,/,I0)') '.STATE',iroot+1
- end if
- write(fid,'(A)') '*ORBITAL INPUT'
- write(fid,'(A)') '.MOSTART'
+ call fch2dal_wrap(fchname, dalname, .true.)
 
- open(newunit=fid1,file=TRIM(olddal),status='old',position='rewind')
+ open(newunit=fid1,file=TRIM(dalname1),status='replace')
+ write(fid1,'(A)') '**DALTON INPUT'
+ if(DKH2) write(fid1,'(A)') '.DOUGLAS-KROLL'
+ write(fid1,'(A)') '.RUN PROPERTIES'
+ write(fid1,'(A)') '**WAVE FUNCTIONS'
+ if(scf) then
+  write(fid1,'(A)') '.MCSCF'
+ else
+  write(fid1,'(A)') '.CI'
+ end if
+
+ write(fid1,'(A,/,A)') '*CONFIGURATION INPUT', '.SPIN MULTIPLICITY'
+ write(fid1,'(I0)') mult
+ write(fid1,'(A,/,I0)') '.INACTIVE ORBITALS', ndb
+ write(fid1,'(A,/,I0)') '.CAS SPACE', nacto
+ write(fid1,'(A,/,I0)') '.ELECTRONS', nacte
+
+ if(scf) then
+  write(fid1,'(A)') '*OPTIMIZATION'
+  write(fid1,'(A,/,A)') '.MAX CI','500'
+  write(fid1,'(A,/,A)') '.MAX MICRO ITERATIONS','200'
+  if(hardwfn) then
+   write(fid1,'(A,/,A)') '.CI PHP MATRIX','400'
+  else if(crazywfn) then
+   write(fid1,'(A,/,A)') '.CI PHP MATRIX','800'
+  else
+   write(fid1,'(A,/,A)') '.CI PHP MATRIX','200'
+  end if
+  write(fid1,'(A,/,A)') '.SYM CHECK','-1'
+  if(iroot > 0) write(fid1,'(A,/,I0)') '.STATE',iroot+1
+ end if
+
+ write(fid1,'(A)') '*ORBITAL INPUT'
+ write(fid1,'(A)') '.MOSTART'
+
+ open(newunit=fid,file=TRIM(dalname),status='old',position='rewind')
  do while(.true.)
-  read(fid1,'(A)') buf
+  read(fid,'(A)') buf
   if(buf(1:8) == '.MOSTART') exit
  end do ! for while
 
  do while(.true.)
-  read(fid1,'(A)') buf
+  read(fid,'(A)') buf
   if(buf(1:5) == '**END') exit
-  write(fid,'(A)') TRIM(buf)
+  write(fid1,'(A)') TRIM(buf)
  end do ! for while
- close(fid1,status='delete')
 
- write(fid,'(A,/,A)') '**PROPERTIES','.SHIELD'
- write(fid,'(A)') '**END OF INPUT'
- close(fid)
+ close(fid,status='delete')
+ write(fid1,'(A)') '**PROPERTIES'
+ if(polar) then
+  write(fid1,'(A)') '.POLARI'
+ else
+  write(fid1,'(A)') '.SHIELD'
+ end if
+ write(fid1,'(A)') '**END OF INPUT'
+
+ close(fid1)
+ i = RENAME(TRIM(dalname1), TRIM(dalname))
 
  nfile = 0
- if(ICSS) call add_ghost2dalton_mol(dalname, nfile)
-end subroutine prt_cas_dalton_nmr_inp
+ if(icss) call add_ghost2dalton_mol(dalname, nfile)
+end subroutine prt_cas_dalton_prop_inp
 
 ! add ghost atoms into Dalton .mol file
 subroutine add_ghost2dalton_mol(inpname, nfile)
@@ -1702,7 +1752,7 @@ end subroutine prt_molcas_cas_para
 
 ! print ground state CASSCF keywords into a PySCF .py file
 subroutine prt_gs_casscf_kywrd_py(fid, RIJK_bas1)
- use mol, only: nacto, nacta, nactb
+ use mol, only: mult, nacto, nacta, nactb
  use mr_keyword, only: mem, nproc, casscf, RI, maxM, hardwfn, crazywfn, block_mpi
  implicit none
  integer, intent(in) :: fid
@@ -1729,7 +1779,12 @@ subroutine prt_gs_casscf_kywrd_py(fid, RIJK_bas1)
  write(fid,'(A)') 'mc.max_cycle = 300'
  write(fid,'(A)') 'mc.verbose = 5'
  write(fid,'(A)') 'mc.kernel()'
- if(casscf) write(fid,'(A)') 'mc.analyze()'
+
+ if(casscf) then ! i.e. not DMRG-CASSCF
+  call prt_csf_casci_kywrd_py(fid, mem, mult, 0, 0, .true., hardwfn, crazywfn)
+  write(fid,'(A)') 'mc.analyze()'
+ end if
+ ! currently we can not directly analyze DMRG wave function
 end subroutine prt_gs_casscf_kywrd_py
 
 ! print excited state (DMRG-)CASSCF keywords into a PySCF script
@@ -1902,11 +1957,21 @@ end subroutine prt_es_casscf_kywrd_py
 ! prt_dmrg_casci_kywrd_py below.
 subroutine prt_casci_kywrd_py(fid, RIJK_bas1)
  use mol, only: mult, nacto, nacta, nactb
- use mr_keyword, only: mem, xmult, iroot, RI, hardwfn, crazywfn
+ use mr_keyword, only: mem, xmult, iroot, nstate, RI, hardwfn, crazywfn
  implicit none
+ integer :: k
  integer, intent(in) :: fid
- real(kind=8) :: ss
  character(len=21), intent(in) :: RIJK_bas1
+
+ if(iroot>0 .and. nstate>0) then
+  write(6,'(/,A)') 'ERROR in subroutine prt_casci_kywrd_py: both iroot and nsta&
+                   &te are > 0. The'
+  write(6,'(A)') 'program does not know whether to perform multi-root CASCI or &
+                 &any excited state'
+  write(6,'(A)') 'CASCI.'
+  close(fid)
+  stop
+ end if
 
  write(fid,'(3(A,I0),A)',advance='no') 'mc = mcscf.CASCI(mf,', nacto, ',(', &
                                        nacta, ',', nactb, ')'
@@ -1916,19 +1981,19 @@ subroutine prt_casci_kywrd_py(fid, RIJK_bas1)
  write(fid,'(A,I0,A)') 'mc.fcisolver.max_memory = ', mem*300, ' # MB'
  call prt_hard_or_crazy_casci_pyscf(0, fid, nacta-nactb, hardwfn, crazywfn)
 
- if(iroot > 0) then
-  ! PySCF CASCI is based on Slater det, where the excited spin may not be the
-  ! desired value. For example, E(T1) is usually lower than E(S1). If `fix_spin_`
-  ! is not invoked here, it will easily converge to T1 when the user wants S1.
-  if(mult==xmult .and. (.not.crazywfn)) then
-   ss = 0.25d0*DBLE(xmult*xmult - 1)
-   write(fid,'(A,F0.3,A)') 'mc.fix_spin_(ss=',ss,')'
-  end if
-  write(fid,'(A,I0,A)') 'mc = mc.state_specific_(',iroot,')'
- end if
+ if(nstate > 0) write(fid,'(A,I0)') 'mc.fcisolver.nroots = ', nstate+1
+ if(iroot > 0) write(fid,'(A,I0,A)') 'mc = mc.state_specific_(',iroot,')'
  write(fid,'(A)') 'mc.natorb = True'
  write(fid,'(A)') 'mc.verbose = 5'
  write(fid,'(A)') 'mc.kernel()'
+
+ k = mult
+ if(iroot > 0) k = xmult
+ ! Compare the obtained <S^2> with the expected <S^2>. If the obtained result
+ ! is spin-pure, CSF-based CASCI will not be invoked. Otherwise invoke the CSF-
+ ! based CASCI automatically.
+ call prt_csf_casci_kywrd_py(fid, mem, k, iroot, nstate, .false., hardwfn, crazywfn)
+
  write(fid,'(A)') 'mc.analyze()'
 end subroutine prt_casci_kywrd_py
 

@@ -619,7 +619,7 @@ end subroutine get_psi4_path
 
 subroutine get_current_dir(dirname)
  implicit none
- integer :: i, fid
+ integer :: i, fid, SYSTEM
  character(len=30) :: fname
  character(len=240), intent(out) :: dirname
 
@@ -1328,6 +1328,87 @@ subroutine submit_cp2k_job(inpname, nproc)
  call run_command(TRIM(longbuf), .false., .false.)
  call delete_file(TRIM(shname))
 end subroutine submit_cp2k_job
+
+! call Gaussian to generate fch file from a given .gjf file
+! Currently Gaussian is required, in the future we may extend this subroutine
+! to use PySCF.
+! later we may remove parameters chkbasis, guess_read, chkname and alive
+subroutine gen_fch_from_gjf(gjfname, hf_fch, chkbasis, guess_read)
+ use util_wrapper, only: formchk
+ implicit none
+ integer :: i, j, charge, mult, fid1, fid2
+ character(len=4) :: method
+ character(len=38), parameter :: error_warn = 'ERROR in subroutine gen_fch_from&
+                                              &_gjf: '
+ character(len=240) :: gau_path, buf, chkname, tmpchk, tmpgjf, tmpout
+ character(len=240), intent(in) :: gjfname, hf_fch
+!f2py intent(in) :: gjfname, hf_fch
+ logical :: alive
+ logical, intent(in) :: chkbasis, guess_read
+
+ call get_gau_path(gau_path)
+ call read_charge_and_mult_from_gjf(gjfname, charge, mult)
+ method = 'RHF'
+ if(mult > 1) method = 'ROHF'
+
+ call find_specified_suffix(gjfname, '.gjf', i)
+ chkname = gjfname(1:i-1)//'.chk'
+ call get_a_random_int(j)
+ write(tmpchk,'(A,I0,A)') gjfname(1:i-1)//'_',j,'.chk'
+ write(tmpgjf,'(A,I0,A)') gjfname(1:i-1)//'_',j,'.gjf'
+ write(tmpout,'(A,I0,A)') gjfname(1:i-1)//'_',j,'.log'
+
+ open(newunit=fid1,file=TRIM(gjfname),status='old',position='rewind')
+ open(newunit=fid2,file=TRIM(tmpgjf),status='replace')
+ write(fid2,'(A)') '%chk='//TRIM(tmpchk)
+
+ do while(.true.)
+  read(fid1,'(A)') buf
+  if(buf(1:1) == '#') exit
+  if(buf(1:4) == '%chk') cycle
+  write(fid2,'(A)') TRIM(buf)
+ end do ! for while
+
+ i = INDEX(buf,' ')
+ j = INDEX(buf,'/')
+ if(i > j) then
+  write(6,'(A)') error_warn//'wrong syntax in file '//TRIM(gjfname)
+  close(fid1)
+  close(fid2,status='delete')
+  stop
+ end if
+
+ if(chkbasis) then
+  buf = buf(1:i)//TRIM(method)//' chkbasis'
+ else
+  buf = buf(1:i)//TRIM(method)//TRIM(buf(j:))
+ end if
+
+ if(guess_read) then
+  buf = TRIM(buf)//' guess(read,only,save)'
+ else
+  buf = TRIM(buf)//' guess(only,save)'
+ end if
+ buf = TRIM(buf)//' nosymm int=nobasistransform 5D 7F'
+ write(fid2,'(A)') TRIM(buf)
+
+ inquire(file=TRIM(tmpchk),exist=alive)
+ if((chkbasis .or. guess_read) .and. (.not.alive)) then
+  call sys_copy_file(TRIM(chkname), TRIM(tmpchk), .true.)
+ end if
+
+ do while(.true.)
+  read(fid1,'(A)',iostat=i) buf
+  if(i /= 0) exit
+  write(fid2,'(A)') TRIM(buf)
+ end do ! for while
+ close(fid1)
+ close(fid2)
+
+ call submit_gau_job(gau_path, tmpgjf, .false.)
+ call formchk(tmpchk, hf_fch)
+ call delete_files(3, [tmpchk, tmpgjf, tmpout])
+end subroutine gen_fch_from_gjf
 
 ! check/detect OpenMolcas is OpenMP version or MPI version
 subroutine check_molcas_is_omp(molcas_omp)

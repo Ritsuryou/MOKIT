@@ -711,14 +711,18 @@ subroutine gen_hf_pyscf_inp(pyname, uhf)
  open(newunit=fid,file=TRIM(pyname),status='replace')
  write(fid,'(A)') 'from pyscf import gto, scf, lib'
  write(fid,'(A)') 'from mokit.lib.py2fch_direct import fchk'
- write(fid,'(A)') 'from mokit.lib.rwwfn import get_nmo_from_ao_ovlp'
+ write(fid,'(A)') 'from mokit.lib.rwwfn import get_nmo_from_ao_ovlp, get_occ_fr&
+                  &om_na_nb'
  write(fid,'(A)') 'from mokit.lib.stability import hf_stable_opt_internal'
  if(uhf .and. mult==1) then
-  write(fid,'(A)') 'from mokit.lib.rwwfn import read_nbf_and_nif_from_fch, rea&
-                   &d_na_and_nb_from_fch, get_occ_from_na_nb2'
+  write(fid,'(A)') 'from mokit.lib.rwwfn import ('
+  write(fid,'(4X,A)') 'read_nbf_and_nif_from_fch,'
+  write(fid,'(4X,A)') 'read_na_and_nb_from_fch,'
+  write(fid,'(4X,A)') 'get_occ_from_na_nb2'
+  write(fid,'(A)') ')'
   write(fid,'(A)') 'from mokit.lib.fch2py import fch2py'
-  write(fid,'(A)') 'import numpy as np'
  end if
+ write(fid,'(A)') 'import numpy as np'
  write(fid,'(/,A,I0,A)') 'lib.num_threads(', nproc, ')'
 
  write(fid,'(A)') 'mol = gto.M()'
@@ -774,16 +778,16 @@ subroutine gen_hf_pyscf_inp(pyname, uhf)
  if(RI) write(fid,'(A)') 'mf = mf.density_fit()'
 
  write(fid,'(A,I0,A)') 'mf.max_memory = ',mem*1000,' # MB'
- write(fid,'(A)') 'mf.max_cycle = 128'
+ write(fid,'(A)') 'mf.max_cycle = 64'
 
  ! check if there is basis set linear dependency
  write(fid,'(A)') "S = mol.intor_symmetric('int1e_ovlp')"
  write(fid,'(A)') 'nbf = S.shape[0]'
  write(fid,'(A)') 'nif = get_nmo_from_ao_ovlp(nbf, S)'
  write(fid,'(A)') 'if(nif < nbf):'
- write(fid,'(A)') '  mf2 = mf.copy()'
- write(fid,'(A)') '  mf = scf.remove_linear_dep_(mf2, threshold=1e-6, lindep=1e-6)'
-
+ write(fid,'(4X,A)') 'mf2 = mf.copy()'
+ write(fid,'(4X,A)') 'mf = scf.remove_linear_dep_(mf2, threshold=1e-6, lindep=1&
+                     &e-6)'
  if(os_singlet) then
   write(fid,'(/,A)') '# use broken symmetry initial guess generated from duplic&
                      &ating RHF'
@@ -800,10 +804,22 @@ subroutine gen_hf_pyscf_inp(pyname, uhf)
   write(fid,'(A)') 'mf.kernel()'
  end if
 
- ! If normal SCF is unconverged, use the Newton method to continue
- write(fid,'(/,A)') 'if mf.converged is False:'
- write(fid,'(A)')   '  mf = mf.newton()'
- write(fid,'(A)')   '  mf.kernel()'
+ write(fid,'(/,A)') 'invoke_newton = not mf.converged'
+ write(fid,'(A)') 'def is_descending_np(arr):'
+ write(fid,'(4X,A)') 'return np.all(arr[:-1] >= arr[1:])'
+ write(fid,'(/,A)') 'if mf.converged and not is_descending_np(mf.mo_occ):'
+ write(fid,'(4X,A)') 'if isinstance(mf, scf.uhf.UHF):'
+ write(fid,'(8X,A)') 'raise OSError("PySCF UHF converged to non-aufbau SCF solution.")'
+ write(fid,'(4X,A)') 'na, nb = mf.mol.nelec'
+ write(fid,'(4X,A)') 'occ = get_occ_from_na_nb(nif, na, nb)'
+ write(fid,'(4X,A)') 'dm = mf.make_rdm1(mo_occ=occ)'
+ write(fid,'(4X,A)') 'mf.mo_occ = occ.copy()'
+ write(fid,'(4X,A)') 'invoke_newton = True'
+ write(fid,'(/,A)') 'if invoke_newton:'
+ write(fid,'(4X,A)') 'mf = mf.newton()'
+ write(fid,'(4X,A)') 'mf.kernel()'
+ write(fid,'(4X,A)') 'if mf.converged is False:'
+ write(fid,'(8X,A)') 'raise OSError("PySCF R(O)HF job failed.")'
 
  if(uhf) then ! UHF
   write(fid,'(/,A)') '# stable=opt'
@@ -812,24 +828,22 @@ subroutine gen_hf_pyscf_inp(pyname, uhf)
   if(mult > 1) then
    write(fid,'(A)') "uhf_fch = '"//TRIM(fchname)//"'"
    write(fid,'(A)') 'try:'
-   write(fid,'(A)') '  import os'
-   write(fid,'(A)') '  os.remove(uhf_fch)'
+   write(fid,'(4X,A)') 'import os'
+   write(fid,'(4X,A)') 'os.remove(uhf_fch)'
    write(fid,'(A)') 'except FileNotFoundError:'
-   write(fid,'(A)') '  pass'
+   write(fid,'(4X,A)') 'pass'
   end if
   write(fid,'(A)') 'fchk(mf, uhf_fch, density=True)'
  else         ! R(O)HF
-  write(fid,'(/,A)') 'if mf.converged is False:'
-  write(fid,'(A)') '  raise OSError("PySCF R(O)HF job failed.")'
   write(fid,'(/,A)') '# stable=opt'
   write(fid,'(A)') 'mf = hf_stable_opt_internal(mf)'
   write(fid,'(/,A)') '# save R(O)HF MOs into .fch file'
   write(fid,'(A)') "rhf_fch = '"//TRIM(fchname)//"'"
   write(fid,'(A)') 'try:'
-  write(fid,'(A)') '  import os'
-  write(fid,'(A)') '  os.remove(rhf_fch)'
+  write(fid,'(4X,A)') 'import os'
+  write(fid,'(4X,A)') 'os.remove(rhf_fch)'
   write(fid,'(A)') 'except FileNotFoundError:'
-  write(fid,'(A)') '  pass'
+  write(fid,'(4X,A)') 'pass'
   write(fid,'(A)') 'fchk(mf, rhf_fch, density=True)'
  end if
 

@@ -881,9 +881,14 @@ subroutine read_no_info_from_fch(fchname, on_thres, nbf, nif, ndb, nopen, nacta,
  implicit none
  integer :: i, na, nb
  integer, intent(out) :: nbf, nif, ndb, nopen, nacta, nactb, nacto, nacte
+!f2py intent(out) :: nbf, nif, ndb, nopen, nacta, nactb, nacto, nacte
  real(kind=8), intent(in) :: on_thres
+!f2py intent(in) :: on_thres
  real(kind=8), allocatable :: noon(:)
+ character(len=43), parameter :: error_warn = 'ERROR in subroutine read_no_info&
+                                              &_from_fch: '
  character(len=240), intent(in) :: fchname
+!f2py intent(in) :: fchname
 
  nacto = 0; nacta = 0; nactb = 0
  call read_nbf_and_nif_from_fch(fchname, nbf, nif)
@@ -893,8 +898,7 @@ subroutine read_no_info_from_fch(fchname, on_thres, nbf, nif, ndb, nopen, nacta,
  allocate(noon(nif))
  call read_eigenvalues_from_fch(fchname, nif, 'a', noon)
  if( ANY(noon < -1d-2) ) then
-  write(6,'(/,A)') 'ERROR in subroutine read_no_info_from_fch: there exists neg&
-                   &ative occupation'
+  write(6,'(/,A)') error_warn//'there exists negative occupation'
   write(6,'(A)') 'number(s), this is not possible. Do you mistake the energy le&
                  &vels for occupation'
   write(6,'(A)') 'numbers? Or do you use relaxed density of MP2/CI/CC/TD- metho&
@@ -903,11 +907,19 @@ subroutine read_no_info_from_fch(fchname, on_thres, nbf, nif, ndb, nopen, nacta,
  end if
 
  if(on_thres<0d0 .or. on_thres>1d0) then
-  write(6,'(/,A)') 'ERROR in subroutine read_no_info_from_fch: input on_thres i&
-                   &s invalid.'
+  write(6,'(/,A)') error_warn//'input on_thres is invalid.'
   write(6,'(A)') '0.0 < on_thres < 1.0 is required.'
   write(6,'(A,F12.6)') 'Current on_thres = ', on_thres
   stop
+ end if
+
+ if(SUM(DABS(noon)) < 1d-3) then
+  ndb = nb; nacta = nopen; nactb = 0; nacto = nopen; nacte = nopen
+  deallocate(noon)
+  write(6,'(/,A)') 'Warning from subroutine read_no_info_from_fch: all occupati&
+                   &on numbers are'
+  write(6,'(A)') 'zero. This file will be treated as ROHF wave function.'
+  return
  end if
 
  do i = 1, nif, 1
@@ -1740,7 +1752,7 @@ subroutine reorder2dbabasv(fchname)
  if(k == 0) k = INDEX(fchname, 'GVB', back=.true.)
  if(k == 0) then
   write(6,'(/,A)') "ERROR in subroutine reorder2dbabasv: 'gvb'/'GVB' key not fo&
-                   &und in filename "//TRIM(fchname)
+                   &und in file "//TRIM(fchname)
   write(6,'(A)') 'Example 1: ben_triplet_uhf_uno_asrot2gvb2_s.fch'
   write(6,'(A)') 'Example 2: ben_triplet_FcGVB14_s.fch'
   stop
@@ -1749,7 +1761,7 @@ subroutine reorder2dbabasv(fchname)
  read(fchname(k+3:i-6),*,iostat=j) npair
  if(j /= 0) then
   write(6,'(/,A)') 'ERROR in subroutine reorder2dbabasv: failed to read npair &
-                   &from filename '//TRIM(fchname)
+                   &from file '//TRIM(fchname)
   write(6,'(A)') 'Example: ben_triplet_uhf_uno_asrot2gvb2_s.fch'
   stop
  end if

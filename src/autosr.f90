@@ -11,6 +11,8 @@ module sr_keyword
  use mol, only: chem_core, ecp_core, ptchg_e, nuc_pt_e, lin_dep
  implicit none
  integer :: core_wish = 0 ! the number of frozen core orbitals the user wishes
+ integer :: mp_n = 0  ! 2/3/4/5 for MP2, MP3, MP4, MP5
+ ! MP4 variants like MP4(DQ) belong to mp_n = 4
  integer :: adc_n = 0 ! 2/3 for ADC(2)/ADC(3) excited/IP/EA states
  integer :: cc_n = 0  ! 2/3 for CC2/CC3 ground state
  real(kind=8) :: ref_e = 0d0    ! reference wfn energy
@@ -134,11 +136,13 @@ subroutine parse_sr_keyword()
   method = method0(1:i-1)
 
   select case(TRIM(method))
-  case('mp2','ri-mp2','qcisd','qcisd(t)','ccd','ccsd','ccsd(t)','ccsd(t)-f12',&
+  case('mp2','mp3','mp4(dq)','mp4(sdq)','mp4','mp5','rimp2','ri-mp2','oomp2', &
+       'oo-mp2','qcisd','qcisd(t)','ccd','ccsd','ccsd(t)','ccsd(t)-f12', &
        'ccsd(t)-f12a','ccsd(t)-f12b','ccsdt','dlpno-ccsd','dlpno-ccsd(t)', &
        'dlpno-ccsd(t0)','dlpno-ccsd(t1)','adc(2)','ip-adc(2)','ea-adc(2)', &
        'adc(3)','ip-adc(3)','ea-adc(3)','sos-adc(2)','scs-adc(2)','cc2','cc3',&
-       'eomccsd','eom-ccsd','eom-ip-ccsd','ip-eom-ccsd','eom-ea-ccsd','ea-eom-ccsd')
+       'eomccsd','eom-ccsd','eom-ip-ccsd','ip-eom-ccsd','eom-ea-ccsd', &
+       'ea-eom-ccsd')
   case default
    write(6,'(/,A)') error_warn//'unsupported method '//TRIM(method)
    close(fid)
@@ -150,8 +154,14 @@ subroutine parse_sr_keyword()
 
  RI = .true. ! turn on RI by default
  select case(TRIM(method))
- case('mp2','ri-mp2')
-  mp2 = .true.
+ case('mp2','rimp2','ri-mp2','oomp2','oo-mp2')
+  mp_n = 2; mp2 = .true.
+ case('mp3')
+  mp_n = 3
+ case('mp4(dq)','mp4(sdq)','mp4')
+  mp_n = 4
+ case('mp5')
+  mp_n = 5
  case('ccd')
   ccd = .true.
  case('ccsd')
@@ -923,7 +933,7 @@ subroutine do_mp2()
  case('dalton')
   inpname = hf_fch(1:i-1)//'_MP2.dal'
   molname = hf_fch(1:i-1)//'_MP2.mol'
-  call fch2dal_wrap(hf_fch, inpname)
+  call fch2dal_wrap(hf_fch, inpname, .true.)
   call prt_posthf_dalton_inp(inpname)
   if(bgchg) call add_bgcharge2inp_wrap(chgname, molname)
   call submit_dalton_job(proname,mem,nproc,dalton_mpi,.false.,.false.,.false.)
@@ -1162,7 +1172,7 @@ subroutine do_cc()
  case('dalton')
   inpname = hf_fch(1:i-1)//'_CC.dal'
   molname = hf_fch(1:i-1)//'_CC.mol'
-  call fch2dal_wrap(hf_fch, inpname)
+  call fch2dal_wrap(hf_fch, inpname, .true.)
   call prt_posthf_dalton_inp(inpname)
   if(bgchg) call add_bgcharge2inp_wrap(chgname, molname)
   call submit_dalton_job(proname,mem,nproc,dalton_mpi,.false.,.false.,.false.)

@@ -343,8 +343,11 @@ subroutine prt_rohf_pyscf_script(mem, nproc, pyname)
   if(LEN_TRIM(buf) == 0) exit
   write(fid1,'(A)') TRIM(buf)
  end do ! for while
+
  write(fid1,'(A)') 'from mokit.lib.py2fch import py2fch'
- write(fid1,'(A,/)') 'from mokit.lib.stability import hf_stable_opt_internal'
+ write(fid1,'(A)') 'from mokit.lib.rwwfn import get_occ_from_na_nb'
+ write(fid1,'(A)') 'from mokit.lib.stability import hf_stable_opt_internal'
+ write(fid1,'(A,/)') 'import numpy as np'
 
  read(fid,'(A)') buf
  if(buf(1:15) == 'lib.num_threads') then
@@ -373,15 +376,33 @@ subroutine prt_rohf_pyscf_script(mem, nproc, pyname)
 
  close(fid,status='delete')
  write(fid1,'(A)') 'dm = mf.make_rdm1()'
- write(fid1,'(A)') 'mf.max_cycle = 128'
+ write(fid1,'(A)') 'mf.max_cycle = 64'
  write(fid1,'(A)') 'mf.kernel(dm0=dm)'
- write(fid1,'(A)') 'if mf.converged is False:'
- write(fid1,'(A)') '  mf = mf.newton()'
- write(fid1,'(A)') '  mf.kernel()'
- write(fid1,'(A)') 'mf = hf_stable_opt_internal(mf)'
+ write(fid1,'(/,A)') '# In case that SCF fails to converge, or SCF is converged&
+                     & to a saddle point or'
+ write(fid1,'(A)') '# higher energy solution such as E(HSOMO)>E(LUMO). Do a che&
+                   &ck here. Switch to'
+ write(fid1,'(A)') '# second-order orbital optimization if any of the mentioned&
+                   & problems is found.'
+ write(fid1,'(A)') 'invoke_newton = not mf.converged'
+ write(fid1,'(A)') 'def is_descending_np(arr):'
+ write(fid1,'(A)') '    return np.all(arr[:-1] >= arr[1:])'
+ write(fid1,'(/,A)') 'if mf.converged and not is_descending_np(mf.mo_occ):'
+ write(fid1,'(A)') '    na, nb = mf.mol.nelec'
+ write(fid1,'(A)') '    occ = get_occ_from_na_nb(nif, na, nb)'
+ write(fid1,'(A)') '    dm = mf.make_rdm1(mo_occ=occ)'
+ write(fid1,'(A)') '    mf.mo_occ = occ.copy()'
+ write(fid1,'(A)') '    invoke_newton = True'
+ write(fid1,'(/,A)') 'if invoke_newton:'
+ write(fid1,'(A)') '    mf = mf.newton()'
+ write(fid1,'(A)') '    mf.kernel()'
+ write(fid1,'(A)') '    if mf.converged is False:'
+ write(fid1,'(A)') '        raise OSError("PySCF ROHF job failed.")'
+ write(fid1,'(/,A)') 'mf = hf_stable_opt_internal(mf)'
  write(fid1,'(A)') "py2fch(hf_fch, nbf, nif, mf.mo_coeff, 'a', mf.mo_energy, Fa&
                    &lse, True)"
  close(fid1)
+
  i = RENAME(TRIM(pyname1), TRIM(pyname))
 end subroutine prt_rohf_pyscf_script
 

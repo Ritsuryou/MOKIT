@@ -14,6 +14,7 @@ subroutine do_sa_cas()
  real(kind=8), allocatable :: e_ev(:), nevpt2_e(:)
  character(len=10) :: cas_prog = ' '
  character(len=24) :: data_string = ' '
+ character(len=31), parameter :: error_warn = 'ERROR in subroutine do_sa_cas: '
  character(len=240) :: inpname, outname
  logical, external :: compare_as_size
  logical :: alive1, alive2, beyond_cas, nevpt2_btw
@@ -39,7 +40,7 @@ subroutine do_sa_cas()
   ! check the odevity of nacte_wish, in case that the user requires nonsense
   ! number of active electrons
   if(MOD(nacte_wish-nopen,2) /= 0) then
-   write(6,'(/,A)') 'ERROR in subroutine do_sa_cas: wrong active space specified.'
+   write(6,'(/,A)') error_warn//'wrong active space specified.'
    write(6,'(3(A,I0),A)') 'Nopen=',nopen,'. Incompatible with SA-CAS(',nacte_wish,&
                           'e,',nacto_wish,'o)'
    stop
@@ -54,8 +55,8 @@ subroutine do_sa_cas()
  end if
 
  if(nacto==0 .or. nacte==0) then
-  write(6,'(/,A)') 'ERROR in subroutine do_sa_cas: some variables have not been&
-                   & initialized correctly.'
+  write(6,'(/,A)') error_warn//'some variables have not been initialized'
+  write(6,'(A)') 'correctly.'
   write(6,'(2(A,I0))') 'nacte=', nacte, ', nacto=', nacto
   stop
  end if
@@ -74,8 +75,7 @@ subroutine do_sa_cas()
  end if
 
  if(given_xmult .and. xmult<mult) then
-  write(6,'(/,A)') 'ERROR in subroutine do_sa_cas: Xmult>=Mult is required. But&
-                   & got'
+  write(6,'(/,A)') error_warn//'Xmult>=Mult is required. But got'
   write(6,'(2(A,I0))') 'Mult=', mult, ', Xmult=', xmult
   stop
  end if
@@ -83,13 +83,20 @@ subroutine do_sa_cas()
  write(6,'(/,2(A,I0),A)') TRIM(data_string)//'(', nacte, 'e,', nacto,&
                           'o) using program '//TRIM(cas_prog)
 
+ alive1 = (nacte==2 .and. nacto==2 .and. nstate>2)
+ alive2 = ((nacte==1 .or. nacte==2*nacto-1) .and. nacto<nstate+1)
+ if(alive1 .or. alive2) then
+  write(6,'(/,A)') error_warn//'too many states are required.'
+  write(6,'(3(A,I0))') 'nacte=',nacte,', nacto=',nacto,', Nstates=',nstate
+  stop
+ end if
+
  nevpt2_btw = (TRIM(cas_prog) == TRIM(nevpt_prog))
  if(nevpt2 .and. (.not.nevpt2_btw)) then
-  write(6,'(/,A)') 'ERROR in subroutine do_sa_cas: please set CASSCF_prog and N&
-                   &EVPT2_prog to be'
+  write(6,'(/,A)') error_warn//'please set CASSCF_prog and NEVPT_prog to be'
   write(6,'(A)') 'the same program. NEVPT2 based on SA-CASSCF currently does no&
                 &t support the case'
-  write(6,'(A)') 'CASSCF_prog /= NEVPT_prog.'
+  write(6,'(A)') 'that CASSCF_prog /= NEVPT_prog.'
   stop
  end if
  call find_specified_suffix(hf_fch, '.fch', i)
@@ -121,8 +128,8 @@ subroutine do_sa_cas()
   call submit_molcas_job(inpname, mem, nproc, molcas_omp)
   call copy_nto_from_orb2fch(hf_fch, nstate)
  case default
-  write(6,'(/,A)') 'ERROR in subroutine do_sa_cas: CASSCF_prog='//TRIM(cas_prog)&
-                 //' unrecognized or unsupported.'
+  write(6,'(/,A)') error_warn//'CASSCF_prog='//TRIM(cas_prog)//' unrecognized o&
+                  &r unsupported.'
   stop
  end select
 
@@ -157,9 +164,7 @@ subroutine do_sa_cas()
   case('orca')
    call read_multiroot_nevpt2_from_orca_out(outname, nstate, nevpt2_e)
   case default
-   write(6,'(/,A)') 'ERROR in subroutine do_sa_cas: NEVPT_prog cannot be recog&
-                    &nized.'
-   write(6,'(A)') 'NEVPT_prog='//TRIM(nevpt_prog)
+   write(6,'(/,A)') error_warn//'invalid NEVPT_prog='//TRIM(nevpt_prog)
    stop
   end select
 
@@ -188,6 +193,7 @@ subroutine prt_sacas_script_into_py(pyname, gvb_fch, nevpt2_btw)
  character(len=21) :: RIJK_bas1
  character(len=240) :: buf, pyname1, cmofch
  character(len=240), intent(in) :: pyname, gvb_fch
+ logical :: alive1, alive2
  logical, intent(in) :: nevpt2_btw ! whether to perform NEVPT2 by the way
 
  if(MixedSpin) then
@@ -282,12 +288,22 @@ subroutine prt_sacas_script_into_py(pyname, gvb_fch, nevpt2_btw)
 
  write(fid2,'(A)',advance='no') 'mc = mc.state_average_(['
  write(fid2,'(5(A,I0,A))',advance='no') ('1e0/',nstate+1,'e0,',i=1,nstate+1,1)
- if(hardwfn) then
-  write(fid2,'(A)') '0.0,0.0,0.0])'
- else if(crazywfn) then
-  write(fid2,'(A)') '0.0,0.0,0.0,0.0,0.0,0.0])'
+ write(6,'(3(A,I0))') 'nacte=', nacte, ', nacto=', nacto, ', nstate=', nstate
+
+ ! Note: mokit{Nstates=2} means nstate=2, and it means the lowest 3 states
+ alive1 = (nacte==2 .and. nacto==2 .and. nstate==2)
+ alive2 = ((nacte==1 .or. nacte==2*nacto-1) .and. nacto==nstate+1)
+
+ if(alive1 .or. alive2) then
+  write(fid2,'(A)') '])'
  else
-  write(fid2,'(A)') '0.0])'
+  if(hardwfn) then
+   write(fid2,'(A)') '0.0,0.0,0.0])'
+  else if(crazywfn) then
+   write(fid2,'(A)') '0.0,0.0,0.0,0.0,0.0,0.0])'
+  else
+   write(fid2,'(A)') '0.0])'
+  end if
  end if
  write(fid2,'(A)') 'mc.conv_tol = 1e-9'
  write(fid2,'(A)') 'mc.max_cycle = 300'
@@ -337,12 +353,16 @@ subroutine prt_sacas_script_into_py(pyname, gvb_fch, nevpt2_btw)
  end if
 
  write(fid2,'(A)',advance='no') 'mc.fcisolver.nroots = '
- if(hardwfn) then
-  write(fid2,'(I0)') nstate+4
- else if(crazywfn) then
-  write(fid2,'(I0)') nstate+7
- else
+ if(alive1 .or. alive2) then
   write(fid2,'(I0)') nstate+1
+ else
+  if(hardwfn) then
+   write(fid2,'(I0)') nstate+4
+  else if(crazywfn) then
+   write(fid2,'(I0)') nstate+7
+  else
+   write(fid2,'(I0)') nstate+1
+  end if
  end if
 
  write(fid2,'(A)') 'mc.verbose = 4'

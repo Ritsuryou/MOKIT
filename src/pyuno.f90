@@ -7,22 +7,6 @@
 ! updated by jxzou at 20210518: add an intent(in) parameter ON_thres
 ! updated by jxzou at 20220711: change ON_thres to uno_thres
 
-subroutine check_unity(n, a, maxv, abs_mean)
- implicit none
- integer :: i
- integer, intent(in) :: n
- real(kind=8), intent(in) :: a(n,n)
- real(kind=8), intent(out) :: maxv, abs_mean
- real(kind=8), allocatable :: b(:,:)
-
- allocate(b(n,n), source=a)
- forall(i = 1:n) b(i,i) = b(i,i) - 1d0
- b = DABS(b)
- maxv = MAXVAL(b)
- abs_mean = SUM(b)/DBLE(n*n)
- deallocate(b)
-end subroutine check_unity
-
 subroutine svd_and_rotate(nbf, na, nb, ab_ovlp, mo_a, mo_b, sv, reverse)
  implicit none
  integer :: i

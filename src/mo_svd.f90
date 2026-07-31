@@ -352,7 +352,7 @@ subroutine orb_resemble(nbf1, nmo1, nbf2, nmo2, mo2, ao_S1, cross_S, mo1)
  call solve_multi_lin_eqs(nbf1, nbf1, ao_S1, nmo2, sc, old_mo)
  deallocate(sc)
 
- ! old_mo is not orthonormalized, symmetric orthonormalization is required
+ ! old_mo is not orthonormal, symmetric orthonormalization is required
  call orthonormalize_orb(.true.,.true., nbf1,nmo2,ao_S1, old_mo, mo1(:,1:nmo2))
  deallocate(old_mo)
 

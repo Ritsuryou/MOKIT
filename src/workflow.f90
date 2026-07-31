@@ -1154,7 +1154,7 @@ subroutine nmr_workflow(gjfname)
 
  call fdate(data_string)
  write(6,'(/,A)') 'Please remember to cite MOKIT in your future publication reg&
-                  &arding the NMR/pNMR'
+                  &arding the (p)NMR'
  write(6,'(A)') 'calculation workflow.'
  write(6,'(A)') 'Normal termination of NMR workflow at '//TRIM(data_string)
 end subroutine nmr_workflow

@@ -13,8 +13,8 @@ end module phys_cons
 
 module mokit_version_info
  implicit none
- character(len=9), parameter :: version = '1.2.8rc7 '
- character(len=11), parameter :: date = '2026-Jul-2 '
+ character(len=9), parameter :: version = '1.2.8rc8 '
+ character(len=11), parameter :: date = '2026-Jul-31'
 end module mokit_version_info
 
 ! transform a string into upper case
@@ -773,15 +773,15 @@ subroutine add_RIJK_bas_into_orca_inp(inpname, RIJK_bas)
  i = RENAME(TRIM(inpname1), TRIM(inpname))
 end subroutine add_RIJK_bas_into_orca_inp
 
-! detect whether there exists the charge keyword in a given .gjf file
-function detect_charge_key_in_gjf(gjfname) result(has_charge)
+! detect whether there is `charge` keyword in a given .gjf file
+function detect_charge_key_in_gjf(gjfname) result(found_charge)
  implicit none
  integer :: i, j, nblank, fid
  character(len=240) :: buf
  character(len=240), intent(in) :: gjfname
- logical :: has_charge
+ logical :: found_charge
 
- has_charge = .true.; nblank = 0
+ found_charge = .true.; nblank = 0
  open(newunit=fid,file=TRIM(gjfname),status='old',position='rewind')
 
  do while(.true.)
@@ -805,29 +805,58 @@ function detect_charge_key_in_gjf(gjfname) result(has_charge)
   call lower(buf(i+1:j-1))
   if(INDEX(buf(i+1:j-1),'charge') > 0) return
  end if
- has_charge = .false.
+ found_charge = .false.
 end function detect_charge_key_in_gjf
+
+! detect whether there is `scan` keyword in a given .gjf file
+function detect_scan_key_in_gjf(gjfname) result(found_scan)
+ implicit none
+ integer :: nblank, fid
+ character(len=240) :: buf
+ character(len=240), intent(in) :: gjfname
+ logical :: found_scan
+
+ found_scan = .false.; nblank = 0
+ open(newunit=fid,file=TRIM(gjfname),status='old',position='rewind')
+
+ do while(.true.)
+  read(fid,'(A)') buf
+  if(buf(1:1) == '#') then
+   call lower(buf)
+   if(INDEX(buf,'scan') > 0) then
+    found_scan = .true.
+    close(fid)
+    return
+   end if
+  end if
+  if(LEN_TRIM(buf) == 0) nblank = nblank + 1
+  if(nblank == 1) exit
+ end do ! for while
+
+ close(fid)
+end function detect_scan_key_in_gjf
 
 ! copy mixed/user-defined basis set in a given .gjf file to a .bas file
 subroutine record_gen_basis_in_gjf(gjfname, basname, add_path)
  implicit none
  integer :: i, nblank0, nblank, fid1, fid2
+ character(len=45), parameter :: error_warn = 'ERROR in subroutine record_gen_b&
+                                              &asis_in_gjf: '
  character(len=240) :: buf
  character(len=240), intent(in) :: gjfname
  character(len=240), intent(out) :: basname
  logical, intent(in) :: add_path
- logical, external :: detect_charge_key_in_gjf
+ logical, external :: detect_charge_key_in_gjf, detect_scan_key_in_gjf
  logical :: nobasis
 
- if(detect_charge_key_in_gjf(gjfname)) then
-  nblank0 = 4
- else
-  nblank0 = 3
- end if
- i = INDEX(gjfname, '.gjf', back=.true.)
- basname = gjfname(1:i-1)//'.bas'
+ nblank0 = 3
+ if(detect_charge_key_in_gjf(gjfname)) nblank0 = nblank0 + 1
+ if(detect_scan_key_in_gjf(gjfname)) nblank0 = nblank0 + 1
 
+ call find_specified_suffix(gjfname, '.gjf', i)
+ basname = gjfname(1:i-1)//'.bas'
  open(newunit=fid1,file=TRIM(gjfname),status='old',position='rewind')
+
  nblank = 0
  do while(.true.)
   read(fid1,'(A)',iostat=i) buf
@@ -837,8 +866,7 @@ subroutine record_gen_basis_in_gjf(gjfname, basname, add_path)
  end do ! for while
 
  if(i /= 0) then
-  write(6,'(/,A)') 'ERROR in subroutine record_gen_basis_in_gjf: incomplete fil&
-                   &e: '//TRIM(gjfname)
+  write(6,'(/,A)') error_warn//'problematic file '//TRIM(gjfname)
   close(fid1)
   stop
  end if
@@ -849,8 +877,7 @@ subroutine record_gen_basis_in_gjf(gjfname, basname, add_path)
  if((.not.nobasis) .and. LEN_TRIM(buf)==0) nobasis = .true.
 
  if(nobasis) then
-  write(6,'(/,A)') 'ERROR in subroutine record_gen_basis_in_gjf: no mixed/user-&
-                   &defined basis'
+  write(6,'(/,A)') error_warn//'no mixed/user-defined basis'
   write(6,'(A)') 'set detected in file '//TRIM(gjfname)
   close(fid1)
   stop
@@ -864,12 +891,11 @@ subroutine record_gen_basis_in_gjf(gjfname, basname, add_path)
  end if
 
  if(.not. ((i>96 .and. i<123) .or. (i>64 .and. i<91))) then
-  write(6,'(A)') 'ERROR in subroutine record_gen_basis_in_gjf: the first charac&
-                 &ter in mixed/user-defined'
+  write(6,'(A)') error_warn//'the first character in mixed/user-defined'
   write(6,'(A)') 'basis set is neither a-z, nor A-Z. This is not an element sym&
                  &bol. This format of basis'
   write(6,'(A)') 'set cannot be recognized by automr. Problematic file: '//&
-                  TRIM(gjfname)
+                 TRIM(gjfname)
   close(fid1)
   stop
  end if
@@ -1831,6 +1857,38 @@ subroutine prt_hard_or_crazy_casci_orca(nx, fid, hardwfn, crazywfn)
  write(unit=fid,fmt=TRIM(buf1)) 'end'
 end subroutine prt_hard_or_crazy_casci_orca
 
+! Print CSF-based CASCI/CASSCF keywords into a given file. In order to use CSF-
+! based CASCI/CASSCF, one is supposed to install pyscf-forge.
+subroutine prt_csf_casci_kywrd_py(fid, mem, mult, iroot, nstate, reset_mo, hardwfn, crazywfn)
+ implicit none
+ integer, intent(in) :: fid, mem, mult, iroot, nstate
+ logical, intent(in) :: reset_mo, hardwfn, crazywfn
+
+ write(fid,'(/,A,F8.2)') 'target_ss =', 0.25d0*DBLE(mult*mult-1)
+ write(fid,'(A)') 'ss = mc.fcisolver.spin_square(mc.ci, mc.ncas, mc.nelecas)'
+ write(fid,'(A)') 'if abs(ss[0] - target_ss) > 1e-3:'
+ write(fid,'(4X,A)') 'from pyscf.csf_fci import csf_solver'
+ write(fid,'(4X,A)') 'print("Remark: determinant-based CASCI solver does not le&
+                     &ad to the expected spin state.")'
+ write(fid,'(4X,A)') 'print("Invoke CSF-based CASCI solver, which requires pysc&
+                     &f-forge installed.")'
+ write(fid,'(4X,A,I0,A)') 'mc.fcisolver = csf_solver(mol, smult=',mult,')'
+ write(fid,'(4X,A,I0,A)') 'mc.fcisolver.max_memory = ', mem*300, ' # MB'
+ write(fid,'(4X,A)') 'mc.fcisolver.conv_tol = 1e-8'
+ if(crazywfn) then
+  write(fid,'(4X,A)') 'mc.fcisolver.max_cycle = 600'
+ else if(hardwfn) then
+  write(fid,'(4X,A)') 'mc.fcisolver.max_cycle = 400'
+ else
+  write(fid,'(4X,A)') 'mc.fcisolver.max_cycle = 200'
+ end if
+ !write(fid,'(4X,A)') 'mc.fcisolver.lindep = 1e-12'
+ if(nstate > 0) write(fid,'(4X,A,I0)') 'mc.fcisolver.nroots = ', nstate+1
+ if(reset_mo) write(fid,'(4X,A)') 'mc.mo_coeff = mf.mo_coeff.copy()'
+ if(iroot > 0) write(fid,'(4X,A,I0,A)') 'mc = mc.state_specific_(',iroot,')'
+ write(fid,'(4X,A)') 'mc.kernel()'
+end subroutine prt_csf_casci_kywrd_py
+
 ! print convergence remark of orbital localization
 subroutine prt_loc_conv_remark(niter, max_niter, subname)
  implicit none
@@ -2347,4 +2405,31 @@ subroutine modify_hf_fch_in_pyscf_inp(pyname, fchname)
  close(fid1)
  i = RENAME(TRIM(pyname1), TRIM(pyname))
 end subroutine modify_hf_fch_in_pyscf_inp
+
+! Find the number of files in a filelist. Note that if there is any blank line,
+! the reading would be terminated.
+subroutine find_nfile_in_filelist(filelist, nfile)
+ implicit none
+ integer :: i, fid
+ integer, intent(out) :: nfile
+!f2py intent(out) :: nfile
+ character(len=240) :: buf
+ character(len=240), intent(in) :: filelist
+!f2py intent(in) :: filelist
+
+ nfile = 0
+ open(newunit=fid,file=TRIM(filelist),status='old',position='rewind')
+
+ do while(.true.)
+  read(fid,'(A)',iostat=i) buf
+  if(i == 0) then
+   if(LEN_TRIM(buf) == 0) exit
+  else
+   exit
+  end if
+  nfile = nfile + 1
+ end do ! for while
+
+ close(fid)
+end subroutine find_nfile_in_filelist
 

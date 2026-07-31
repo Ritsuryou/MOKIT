@@ -1,4 +1,4 @@
-MOKIT 1.2.8rc7 (Jul 2, 2026)
+MOKIT 1.2.8rc8 (Jul 31, 2026)
 ------------------------
 Fixes
 * fix the number of occupied orbitals when ECP/PP is used in get_mf_from_fch
@@ -9,7 +9,7 @@ Fixes
 * fix command line argument bug in subroutine gvb_exclude_XH_A_wrap (introduced in 1.2.7rc20)
 * fix DF-MP2 frozen core setting when MP2_prog=PySCF
 Features
-* add `Polar_prog` and corresponding ORCA/OpenMolcas/Gaussian interfaces
+* add `Polar_prog` and corresponding Dalton/ORCA/OpenMolcas/Gaussian interfaces
 * add interconversion subroutines between .xyz/.gjf/.pdb
 * support `-dft` in fch2inp and fch2dal
 * support EE-/SCS-/SOS- ADC(2) interface in autosr to the Turbomole program
@@ -20,6 +20,13 @@ Features
 * add subroutine gbw2rest in mokit/src/util_wrapper.f90
 * add spin-pure GP interface to OpenMolcas
 Improvement
+* automatically invoke CSF-based CASCI solver for non-pure state when CASSCF_prog=PySCF
+* add check of non-aufbau SCF solution when calling PySCF to do HF
+* specify the initial CI subspace dimension in Dalton CASSCF input
+* add isotropic/anisotropic polarizability output
+* merge CASSCF energy and polarizability into one job to save time, when
+  Polar_prog=CASSCF_prog and CASSCF analytical polarizability is supported
+  for Polar_prog
 * remove compulsory dependency on PySCF in fch2rest
 * add `-nocopy` for fch2qchem
 * update subroutine fch2mkl_wrap

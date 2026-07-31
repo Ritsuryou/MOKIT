@@ -26,7 +26,7 @@ Negligible energy loss(usually<1e-6 a.u., for the same wave function method in t
 
 Note that although MOKIT aims to make the multi-reference calculations black-box, the users are still required to have practical experiences of quantum chemistry computations, e.g. familiar with routine DFT calculations in [Gaussian](https://gaussian.com). You are encouraged to learn how to use Gaussian if you are a fresh hand.
 
-Jul 2, 2026
+Jul 31, 2026
 
 Dependencies
 ------------
@@ -39,7 +39,7 @@ Dependencies on quantum chemistry packages are different for each executable or 
 
 Installation
 ------------
-You can choose one of the four options shown below to install MOKIT on Linux or MacOS, and they are for full functionalities. If you only want the utility `frag_guess_wfn` or some other utility like `fch2mkl`, see [here](https://doc.mokit.xyz/chap2-2.html#223-only-want-frag_guess_wfn) for an even easier way to install.
+You can choose one of the three options shown below to install MOKIT on Linux or MacOS, and they are for full functionalities. If you only want the utility `frag_guess_wfn` or some other utility like `fch2mkl`, see [here](https://doc.mokit.xyz/chap2-2.html#223-only-want-frag_guess_wfn) for an even easier way to install.
 Pre-built `Windows OS` executables for a few utilities are provided in [Releases](https://gitlab.com/jxzou/mokit/-/releases). But they are outdated compared with master branch, and there's no way to use full functionality on Windows.
 
 ### Option 1: Install from conda (for Linux and MacOS)
@@ -82,7 +82,7 @@ The link to latest version of MOKIT source code can be found [here](https://doc.
 
 * Compile all modules
 ```
-cd src
+cd src/
 make all
 cd ..
 pip install -e . --prefix=.

@@ -608,6 +608,26 @@ subroutine check_symm_cmplx(n, a)
  deallocate(b_real, b_imag)
 end subroutine check_symm_cmplx
 
+! check whether a square matrix is a unit matrix
+subroutine check_unity(n, a, maxv, abs_mean)
+ implicit none
+ integer :: i
+ integer, intent(in) :: n
+ real(kind=8), intent(in) :: a(n,n)
+ real(kind=8), intent(out) :: maxv, abs_mean
+ real(kind=8), allocatable :: b(:,:)
+
+ allocate(b(n,n), source=a)
+ do i = 1, n, 1
+  b(i,i) = b(i,i) - 1d0
+ end do ! for i
+
+ b = DABS(b)
+ maxv = MAXVAL(b)
+ abs_mean = SUM(b)/DBLE(n*n)
+ deallocate(b)
+end subroutine check_unity
+
 ! get upper triangle index pairs (j>=i), similar to numpy.triu_indices
 subroutine get_triu_idx(n, map)
  implicit none
@@ -2818,6 +2838,37 @@ subroutine qr_fac(m, n, A, Q, R)
   stop
  end if
 end subroutine qr_fac
+
+! calculate isotropic/anisotropic polarizability from the 3*3 polar tensor
+subroutine calc_alpha_iso_aniso_from_polar(polar, alpha_iso, alpha_aniso)
+ implicit none
+ integer :: k1(1)
+ real(kind=8) :: sum_diff2, diff(3), diff2(3), ndiag(3), w(3), polar1(3,3)
+ real(kind=8), intent(in) :: polar(3,3)
+ real(kind=8), intent(out) :: alpha_iso, alpha_aniso(3)
+
+ alpha_iso = (polar(1,1) + polar(2,2) + polar(3,3))/3d0
+ diff = [polar(1,1)-polar(2,2), polar(1,1)-polar(3,3), polar(2,2)-polar(3,3)]
+ diff2 = [diff(1)*diff(1), diff(2)*diff(2), diff(3)*diff(3)]
+ sum_diff2 = diff2(1) + diff2(2) + diff2(3)
+ ndiag = [polar(1,2)*polar(1,2),polar(1,3)*polar(1,3),polar(2,3)*polar(2,3)]
+
+ alpha_aniso(1) = DSQRT(0.5d0*(sum_diff2 + 6d0*SUM(ndiag)))
+ alpha_aniso(2) = DSQRT(0.5d0*sum_diff2)
+
+ polar1 = polar
+ call diag_get_e_and_vec(3, polar1, w)
+
+ k1 = MAXLOC(w)
+ select case(k1(1))
+ case(1)
+  alpha_aniso(3) = w(1) - 0.5d0*(w(2)+w(3))
+ case(2)
+  alpha_aniso(3) = w(2) - 0.5d0*(w(1)+w(3))
+ case(3)
+  alpha_aniso(3) = w(3) - 0.5d0*(w(1)+w(2))
+ end select
+end subroutine calc_alpha_iso_aniso_from_polar
 
 ! convert spin multiplicity to spin square <S^2>
 pure function mult2ssquare(mult) result(ss)

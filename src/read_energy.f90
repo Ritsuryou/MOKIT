@@ -918,7 +918,7 @@ subroutine read_cas_energy_from_pyout(outname, e, scf, spin, dmrg)
   read(buf(10:),*) e(1)
   call get_dpv_after_flag(buf, '=', .false., s_square)
 
-  if( DABS(expect - s_square) > max_diff) then
+  if(DABS(expect - s_square) > max_diff) then
    write(6,'(/,A)') REPEAT('-',79)
    write(6,'(A)') 'Warning in subroutine read_cas_energy_from_pyout: the 0-th s&
                   &tep in this CASSCF'

@@ -869,14 +869,15 @@ subroutine gen_mrsfcis_mo_dm_from_gms_gms(gmsname, averaged, istate, nfc, nval,&
 !f2py intent(out) :: mo_dm
 !f2py depend(nif) :: mo_dm
  real(kind=8), allocatable :: mo_dm0(:,:), exc(:,:)
+ character(len=52), parameter :: error_warn = 'ERROR in subroutine gen_mrsfcis_&
+                                              &mo_dm_from_gms_gms: '
  character(len=240), intent(in) :: gmsname
 !f2py intent(in) :: gmsname
  logical, intent(in) :: averaged
 !f2py intent(in) :: averaged
 
  if(istate < 0) then
-  write(6,'(/,A)') 'ERROR in subroutine gen_mrsfcis_mo_dm_from_gms_gms: istate>&
-                   &=0 is required.'
+  write(6,'(/,A)') error_warn//'istate>=0 is required.'
   write(6,'(A)') 'gmsname='//TRIM(gmsname)
   write(6,'(A,I0)') 'istate=', istate
   stop
@@ -884,11 +885,10 @@ subroutine gen_mrsfcis_mo_dm_from_gms_gms(gmsname, averaged, istate, nfc, nval,&
 
  call read_mult_from_gms_gms(gmsname, mult)
  if(mult /= 3) then
-  write(6,'(/,A)') 'ERROR in subroutine gen_mrsfcis_mo_dm_from_gms_gms: MRSF ca&
-                   &n only be applied'
-  write(6,'(A)') 'in the triplet case currently. But a different spin multiplic&
-                 &ity is detected in'
-  write(6,'(A)') 'file '//TRIM(gmsname)
+  write(6,'(/,A)') error_warn//'MRSF can only be applied'
+  write(6,'(A)') 'to the triplet ground state case currently. But a different s&
+                 &pin multiplicity is'
+  write(6,'(A)') 'detected in file '//TRIM(gmsname)
   write(6,'(A,I0)') 'mult=', mult
   stop
  end if

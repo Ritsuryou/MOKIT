@@ -26,7 +26,7 @@ or
 
 请注意，尽管MOKIT程序的目标是使多参考计算实现自动化和黑箱式，减少人为干预。但用户仍需具备使用常见量子化学软件的基本技能，例如熟悉[Gaussian](https://gaussian.com)软件的常规DFT计算。若您是一名量化新手，强烈建议先学习并熟练使用Gaussian软件做常规计算，否则很可能难以正确理解MOKIT的输出内容，或做出错误解读。
 
-2026年7月2号
+2026年7月31号
 
 依赖
 ----------
@@ -39,7 +39,7 @@ or
 
 安装
 ----------
-在Linux或MacOS上，您可以从以下展示的4种安装方式中选择一种来安装MOKIT，这些安装方式可以让您使用MOKIT全部功能。若您仅想使用小程序`frag_guess_wfn`或其他某个小程序如`fch2mkl`，还有更简洁的安装方式，见[此处](https://doc.mokit.xyz/chap2-2.html#223-only-want-frag_guess_wfn)。
+在Linux或MacOS上，您可以从以下展示的3种安装方式中选择一种来安装MOKIT，这些安装方式可以让您使用MOKIT全部功能。若您仅想使用小程序`frag_guess_wfn`或其他某个小程序如`fch2mkl`，还有更简洁的安装方式，见[此处](https://doc.mokit.xyz/chap2-2.html#223-only-want-frag_guess_wfn)。
 开发者还提供`Windows`系统下预编译好的小程序，点击[下载](https://gitlab.com/jxzou/mokit/-/releases)。但请注意这些小程序的版本会滞后于master主分支代码，且无法在Windows上使用MOKIT的全部功能。
 
 ### 方式1：conda 联网安装（适用于 Linux 或 MacOS）
@@ -81,7 +81,7 @@ export GMS=$HOME/software/gamess/rungms
 
 * 编译全部模块， 执行
 ```
-cd src
+cd src/
 make all
 cd ..
 pip install -e . --prefix=.

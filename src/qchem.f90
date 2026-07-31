@@ -74,7 +74,7 @@ subroutine qchem2dalton(fchname, dalname)
  std_fch = fchname(1:i-1)//'_std.fch'
 
  call standardize_fch(fchname)
- call fch2dal_wrap(std_fch, dalname)
+ call fch2dal_wrap(std_fch, dalname, .false.)
  call delete_file(TRIM(std_fch))
 end subroutine qchem2dalton
 
