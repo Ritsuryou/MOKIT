@@ -42,14 +42,14 @@ Installation
 You can choose one of the three options shown below to install MOKIT on Linux or MacOS, and they are for full functionalities. If you only want the utility `frag_guess_wfn` or some other utility like `fch2mkl`, see [here](https://doc.mokit.xyz/chap2-2.html#223-only-want-frag_guess_wfn) for an even easier way to install.
 Pre-built `Windows OS` executables for a few utilities are provided in [Releases](https://gitlab.com/jxzou/mokit/-/releases). But they are outdated compared with master branch, and there's no way to use full functionality on Windows.
 
-### Option 1: Install from conda (for Linux and MacOS)
+### Option 1: Install from conda
 This is the easiest way, but network is required to auto-download the requirements. Creating a new environment before installing is highly recommended, to avoid changing your base environment. You can create the environment and install in one go like
 ```
 conda create -n mokit-py311 python=3.11 mokit -c mokit -c conda-forge
 conda activate mokit-py311
 conda install pyscf -c conda-forge # you can install PySCF by the way
 ```
-For Linux x86-64, you can use any version of Python 3.9-3.12. But for MacOS arm64, only 3.11 is available. MacOS users can also [use the homebrew-toolchains](https://doc.mokit.xyz/chap2-2.html#option-2-use-homebrew-toolchains-for-macos-only) to install MOKIT.
+For Linux x86-64, you can use any version of Python 3.9-3.12. But for MacOS arm64 or Windows x86-64, only 3.11 is available. MacOS users can also [use the homebrew-toolchains](https://doc.mokit.xyz/chap2-2.html#option-2-use-homebrew-toolchains-for-macos-only) to install MOKIT.
 
 For more details about conda channels and how to update/uninstall MOKIT using conda, please read [here](https://doc.mokit.xyz/chap2-2.html#option-1-install-from-conda-for-linux-and-macos). You need to activate the environment `mokit-py311` before using MOKIT, and you can run `conda deactivate` to exit the environment when you do not use it. Please read [more details](https://doc.mokit.xyz/chap2-4.html) to install and use MOKIT on a Cluster(集群). If you have no access to network, but still don't want to compile the source code, you can try Option 2 below.
 
@@ -78,7 +78,7 @@ The link to latest version of MOKIT source code can be found [here](https://doc.
 * Prerequisites
     - Fortran compiler: `ifort`(>=2017) or `gfortran`(>=4.8.5)
     - Intel MKL(recommended) or [OpenBLAS](https://github.com/xianyi/OpenBLAS)
-    - f2py (installing Anaconda Python3 recommended)
+    - f2py (part of NumPy, installing from Miniconda3/Miniforge/Anaconda3 recommended)
 
 * Compile all modules
 ```

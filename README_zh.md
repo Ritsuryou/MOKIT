@@ -42,7 +42,7 @@ or
 在Linux或MacOS上，您可以从以下展示的3种安装方式中选择一种来安装MOKIT，这些安装方式可以让您使用MOKIT全部功能。若您仅想使用小程序`frag_guess_wfn`或其他某个小程序如`fch2mkl`，还有更简洁的安装方式，见[此处](https://doc.mokit.xyz/chap2-2.html#223-only-want-frag_guess_wfn)。
 开发者还提供`Windows`系统下预编译好的小程序，点击[下载](https://gitlab.com/jxzou/mokit/-/releases)。但请注意这些小程序的版本会滞后于master主分支代码，且无法在Windows上使用MOKIT的全部功能。
 
-### 方式1：conda 联网安装（适用于 Linux 或 MacOS）
+### 方式1：conda 联网安装
 
 这是最简单的安装方法，但需要联网以自动下载依赖。强烈建议在安装前创建一个新环境，以免破坏 base 环境。创建环境和安装可以一步到位，如
 ```
@@ -50,7 +50,7 @@ conda create -n mokit-py311 python=3.11 mokit -c mokit -c conda-forge
 conda activate mokit-py311
 conda install pyscf -c conda-forge # 可顺便安装PySCF
 ```
-对于Linux x86-64，您可以使用3.9-3.12任一Python版本；而对于MacOS arm64，目前只支持3.11。MacOS用户也可以[使用homebrew-toolchains](https://doc.mokit.xyz/chap2-2.html#option-2-use-homebrew-toolchains-for-macos-only)安装MOKIT。
+对于Linux x86-64，您可以使用3.9-3.12任一Python版本；而对于 MacOS arm64 或 Windows x86-64，目前只支持3.11。MacOS用户也可以[使用homebrew-toolchains](https://doc.mokit.xyz/chap2-2.html#option-2-use-homebrew-toolchains-for-macos-only)安装MOKIT。
 
 关于conda channel的信息、如何利用conda更新或卸载MOKIT，请阅读[此处](https://doc.mokit.xyz/chap2-2.html#option-1-install-from-conda-for-linux-and-macos)。在使用MOKIT前请记得先激活`mokit-py311`环境，不使用时可以运行`conda deactivate`退出虚拟环境。在集群上安装和使用MOKIT请阅读[更多细节](https://doc.mokit.xyz/chap2-4.html)。若您的机器无法联网，但仍不想手动编译，可尝试下方的方式2。
 
@@ -77,7 +77,7 @@ export GMS=$HOME/software/gamess/rungms
 * 前提（编译器和库要求）
     - Fortran编译器: `ifort`(>=2017) 或 `gfortran`(>=4.8.5)
     - Intel MKL(推荐安装Intel编译器，内含ifort和MKL) 或 [OpenBLAS](https://github.com/xianyi/OpenBLAS)
-    - f2py (推荐安装Anaconda Python3，内含f2py)
+    - f2py (NumPy 的一个组件，推荐通过 Miniconda3/Miniforge/Anaconda3 安装 NumPy)
 
 * 编译全部模块， 执行
 ```
