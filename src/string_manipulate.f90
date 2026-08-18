@@ -13,8 +13,8 @@ end module phys_cons
 
 module mokit_version_info
  implicit none
- character(len=9), parameter :: version = '1.2.8rc8 '
- character(len=11), parameter :: date = '2026-Jul-31'
+ character(len=9), parameter :: version = '1.2.8    '
+ character(len=11), parameter :: date = '2026-Aug-18'
 end module mokit_version_info
 
 ! transform a string into upper case
