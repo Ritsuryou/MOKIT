@@ -30,7 +30,7 @@ contains
 
  ! Perform SVD on two sets of MOs and rotate them using obtained unitary matrice U and V_T
  ! Note that these two sets MOs can have different number of basis functions and number of MOs
- subroutine svd_and_rotate2(nbf1, nmo1, nbf2, nmo2, coeff1, coeff2, mo_ovlp, sv, reverse, mo_e)
+ subroutine svd_and_rotate2(nbf1, nmo1, nbf2, nmo2, reverse, coeff1, coeff2, mo_ovlp, sv, mo_e)
   implicit none
   integer :: i
   integer, intent(in) :: nbf1, nmo1, nbf2, nmo2
@@ -206,7 +206,7 @@ subroutine mo_svd(nbf1, nmo1, nbf2, nmo2, coeff1, coeff2, ao_ovlp, reverse)
 
  ! perform SVD and get new MO
  allocate(sv(nmo1), source=0d0)
- call svd_and_rotate2(nbf1, nmo1, nbf2, nmo2, coeff1, coeff2, mo_ovlp, sv, reverse)
+ call svd_and_rotate2(nbf1, nmo1, nbf2, nmo2, reverse, coeff1, coeff2, mo_ovlp, sv)
 
  write(6,'(/,A)') 'Singular values:'
  write(6,'(5(1X,ES15.8))') (sv(i),i=1,nmo1)
@@ -264,7 +264,7 @@ subroutine proj_occ_get_act_vir(nbf1, nmo1, nbf2, na_np, s2, cross_s, coeff1, co
 
  coeff(:,1:na_np) = coeff1(:,1:na_np)
  allocate(sv(nmo2))
- call svd_and_rotate2(nbf2,nmo2, nbf1,na_np, coeff2,coeff,mo_ovlp, sv, .false.)
+ call svd_and_rotate2(nbf2,nmo2, nbf1,na_np, .false., coeff2,coeff,mo_ovlp, sv)
  write(6,'(/,A)') 'Singular values of projecting small basis MOs onto large&
                     & basis (partially) occupied MOs:'
  write(6,'(5(1X,ES15.8))') (sv(i),i=1,nmo2)
@@ -276,8 +276,8 @@ subroutine proj_occ_get_act_vir(nbf1, nmo1, nbf2, na_np, s2, cross_s, coeff1, co
  call get_mo_basis_ovlp2(nbf1, nvir1, nbf2, nvir2, coeff1(:,na_np+1:nmo1), &
                          coeff2(:,na_np+1:nmo2), cross_s, mo_ovlp)
  allocate(sv(nvir1))
- call svd_and_rotate2(nbf1, nvir1, nbf2, nvir2, coeff1(:,na_np+1:nmo1), &
-                      coeff2(:,na_np+1:nmo2), mo_ovlp, sv, .false.)
+ call svd_and_rotate2(nbf1,nvir1, nbf2,nvir2, .false., coeff1(:,na_np+1:nmo1), &
+                      coeff2(:,na_np+1:nmo2), mo_ovlp, sv)
  write(6,'(/,A)') 'Singular values of projecting large basis set virtual MOs&
                     & onto small basis virtual MOs:'
  write(6,'(5(1X,ES15.8))') (sv(i),i=1,nvir1)
@@ -310,7 +310,7 @@ subroutine mo_svd_qcmo(nbf1, nmo1, nbf2, nmo2, coeff1, coeff2, ao_ovlp, mo_e)
 
  ! perform SVD and get new MO
  allocate(sv(nmo1), source=0d0)
- call svd_and_rotate2(nbf1, nmo1, nbf2, nmo2, coeff1, coeff2, mo_ovlp, sv, .false., mo_e)
+ call svd_and_rotate2(nbf1,nmo1,nbf2,nmo2,.false.,coeff1,coeff2,mo_ovlp,sv,mo_e)
 
  write(6,'(/,A)') 'Singular values:'
  write(6,'(5(1X,ES15.8))') (sv(i),i=1,nmo1)

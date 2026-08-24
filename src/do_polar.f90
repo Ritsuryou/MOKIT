@@ -6,21 +6,22 @@
 ! In the future, we might rename this to subroutine do_prop. But currently
 ! we only have the property `polarizability`, so we use do_polar.
 
-!TODO: automatically set RIC auxbasis
-!TODO: support cc-pVnZ-PP and their corresponding RIC auxbasis
+!TODO: read CASSCF energy for Polar_prog=Dalton/ORCA, and compare with the
+!      CASSCF energy from previous do_cas
 !TODO: signal errors when CASCI is required in do_cas
-!TODO: support CCSD polar
+!TODO: support MP2 and CCSD polar
 
 subroutine do_polar()
  use mr_keyword, only: mem, nproc, iroot, polar, molcas_omp, dalton_mpi, bgchg,&
   chgname, casnofch, casscf_polar, casscf_prog, polar_prog, gau_path, orca_path,&
   molcas_path
- use mol, only: nacto, nacte, polarizability
+ use mol, only: nacto, nacte, casscf_e, polarizability
  use util_wrapper, only: add_bgcharge2inp_wrap, unfchk, fch2mkl_wrap, &
   mkl2gbw, fch2inporb_wrap
  implicit none
  integer :: i
- real(kind=8) :: alpha_iso, alpha_aniso(3)
+ real(kind=8) :: alpha_iso, alpha_aniso(3), e(2)
+ real(kind=8), parameter :: e_diff_thres = 1d-4
  character(len=24) :: data_string
  character(len=30), parameter :: error_warn='ERROR in subroutine do_polar: '
  character(len=240) :: buf, proname, inpname, outname, mklname, cas_out
@@ -104,6 +105,15 @@ subroutine do_polar()
   call prt_cas_dalton_prop_inp(casnofch, .true., .false., .true., iroot, i)
   if(bgchg) call add_bgcharge2inp_wrap(chgname, inpname)
   call submit_dalton_job(buf, mem, nproc, dalton_mpi, .false., .false., .false.)
+  call read_cas_energy_from_dalton_out(outname, e, .true.)
+  if(DABS(e(2)-casscf_e) > e_diff_thres) then
+   write(6,'(/,A)') error_warn//'it seems that Dalton CASSCF is not converged'
+   write(6,'(A)') 'to the same CASSCF solution from previous step.'
+   write(6,'(A,F18.6)') 'Energy difference threshold :', e_diff_thres
+   write(6,'(A,F18.6)') 'E(CASSCF) from previous step:', casscf_e
+   write(6,'(A,F18.6)') 'E(CASSCF) from Dalton polar :', e(2)
+   stop
+  end if
 
  case default
   write(6,'(/,A)') error_warn//'unrecognized Polar_prog='//TRIM(polar_prog)

@@ -125,9 +125,10 @@ subroutine fch2rest(fchname, dftname, disp_type)
  integer :: i, icart
  integer, intent(in) :: disp_type ! type of dispersion correction
  character(len=30), intent(in) :: dftname
+ character(len=30), parameter :: error_warn = 'ERROR in subroutine fch2rest: '
  character(len=240), intent(in) :: fchname
  character(len=240) :: inpname, dirname
- logical :: uhf, ghf, sph
+ logical :: uhf, ghf, sph, sfx2c
  logical, allocatable :: ghost(:) ! size natom
 
  call find_specified_suffix(fchname, '.fch', i)
@@ -136,7 +137,7 @@ subroutine fch2rest(fchname, dftname, disp_type)
 
  call check_ghf_in_fch(fchname, ghf) ! determine whether GHF
  if(ghf) then
-  write(6,'(/,A)') 'ERROR in subroutine fch2rest: GHF not supported currently.'
+  write(6,'(/,A)') error_warn//'GHF is unsupported currently.'
   write(6,'(A)') 'fchname='//TRIM(fchname)
   stop
  end if
@@ -152,6 +153,18 @@ subroutine fch2rest(fchname, dftname, disp_type)
    ghost(i) = .false.
   end if
  end do ! for i
+
+ sfx2c = .false.
+ call find_irel_in_fch(fchname, irel)
+ select case(irel)
+ case(-1) ! non-relativistic calculation
+ case(-3) ! sfX2C, sfX2C1e
+  sfx2c = .true.
+ case default
+  write(6,'(/,A)') error_warn//'relativistic type cannot be recognized.'
+  write(6,'(A,I0)')'Currently only NONE/sfX2C are supported. But got irel=',irel
+  stop
+ end select
 
  sph = .true.
  call find_icart_from_shell_type(.false., ncontr, shell_type, icart)
@@ -171,7 +184,7 @@ subroutine fch2rest(fchname, dftname, disp_type)
  end if
 
  call write_rest_in_and_basis(inpname, dftname, disp_type, charge, mult, natom,&
-                              elem, coor, sph, uhf, ghost)
+                              elem, coor, sph, uhf, sfx2c, ghost)
  deallocate(ghost)
 
  call gen_rest_bas_dir(dirname)
@@ -225,7 +238,7 @@ subroutine find_rest_basis_set_pool(path)
 end subroutine find_rest_basis_set_pool
 
 subroutine write_rest_in_and_basis(inpname, dftname, disp_type, charge, mult, &
-                                   natom, elem, coor, sph, uhf, ghost)
+                                   natom, elem, coor, sph, uhf, sfx2c, ghost)
  implicit none
  integer :: i, fid
  integer, intent(in) :: disp_type, charge, mult, natom
@@ -236,7 +249,7 @@ subroutine write_rest_in_and_basis(inpname, dftname, disp_type, charge, mult, &
  character(len=240), intent(in) :: inpname
  character(len=240) :: basename
  logical :: mp_or_dh
- logical, intent(in) :: sph, uhf, ghost(natom)
+ logical, intent(in) :: sph, uhf, sfx2c, ghost(natom)
 
  mp_or_dh = .false. ! not MP2 or Double-hybrid functional
  dftname1 = dftname
@@ -280,6 +293,7 @@ subroutine write_rest_in_and_basis(inpname, dftname, disp_type, charge, mult, &
  else
   if(mult > 1) write(fid,'(2X,A)') 'spin_polarization = false'
  end if
+ if(sfx2c) write(fid,'(2X,A)') 'rel = "sfx2c"'
 
  selectcase(disp_type)
  case(0) ! no dispersion correction

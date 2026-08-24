@@ -83,7 +83,7 @@ OBJ_fch_mo_copy = file_op.o string_manipulate.o math_sub.o rw_misc.o read_ev_on.
 OBJ_fch2wfn = file_op.o string_manipulate.o math_sub.o util_wrapper.o read_fch.o \
               fch2wfn.o
 OBJ_fch247 = file_op.o string_manipulate.o read_fch.o math_sub.o util_wrapper.o \
-             fch247.o
+             rw_misc.o read_ev_on.o call_qc_calc_int.o rwwfn.o fch247.o
 OBJ_frag_guess_wfn = file_op.o string_manipulate.o math_sub.o util_wrapper.o \
                      read_fch.o mr_keyword.o read_mkl.o rw_misc.o rwwfn.o read_natom.o \
                      read_energy.o read_grad.o read_ev_on.o rwgeom.o read_gms_inp.o \

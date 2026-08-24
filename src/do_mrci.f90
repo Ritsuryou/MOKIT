@@ -253,14 +253,11 @@ end subroutine do_mrcisd
 ! print DMRG-FIC-MRCISD script into a given .py file
 subroutine prt_mrci_script_into_py(pyname)
  use mol, only: nacto, nacta, nactb
- use mr_keyword, only: mem, nproc, maxM, RI, RIJK_bas, iroot, target_root, block_mpi
+ use mr_keyword, only: mem, nproc, maxM, iroot, target_root, block_mpi
  implicit none
  integer :: i, nroots, fid1, fid2, RENAME
- character(len=21) :: RIJK_bas1
  character(len=240) :: buf, pyname1
  character(len=240), intent(in) :: pyname
-
- if(RI) call auxbas_convert(RIJK_bas, RIJK_bas1, 1)
 
  call find_specified_suffix(pyname, '.py', i)
  pyname1 = pyname(1:i-1)//'.t'
@@ -304,15 +301,9 @@ subroutine prt_mrci_script_into_py(pyname)
  close(fid1,status='delete')
 
  write(fid2,'(A)') '# generate CASCI wfn'
- write(fid2,'(3(A,I0),A)',advance='no') 'mc = mcscf.CASCI(mf,', nacto, ',(', &
-                                        nacta, ',', nactb, ')'
- if(RI) then
-  write(fid2,'(A)') ").density_fit(auxbasis='"//TRIM(RIJK_bas1)//"')"
- else
-  write(fid2,'(A)') ')'
- end if
-
+ write(fid2,'(3(A,I0),A)')'mc = mcscf.CASCI(mf,',nacto,',(',nacta,',',nactb,'))'
  write(fid2,'(A,I0,A)') 'mc.fcisolver = dmrgscf.DMRGCI(mol, maxM=', maxM, ')'
+
  if(block_mpi) then
   i = CEILING(0.5*REAL(mem)/REAL(nproc))
   write(fid2,'(A,I0,A)') 'mc.max_memory = ', (mem-nproc*i)*1000, ' # MB'

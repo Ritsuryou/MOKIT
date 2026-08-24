@@ -255,8 +255,8 @@ subroutine get_gau_ao_dip_from_pyscf(fchname, nbf, ao_dip)
  write(fid,'(A)') 'center, pyscf_ao_dip = get_ao_dip(mol, fix_center=True)'
  write(fid,'(A)') 'nbf = pyscf_ao_dip[0].shape[0]'
  write(fid,'(A)') 'for i in range(3):'
- write(fid,'(A)') '  tmp_dip = ovlp_pyscf2gau(fchname, nbf, pyscf_ao_dip[i])'
- write(fid,'(A)') '  write_mo2bin(binfile[i], nbf, nbf, tmp_dip)'
+ write(fid,'(4X,A)') 'tmp_dip = ovlp_pyscf2gau(fchname, nbf, pyscf_ao_dip[i])'
+ write(fid,'(4X,A)') 'write_mo2bin(binfile[i], nbf, nbf, tmp_dip)'
  close(fid)
 
  call submit_pyscf_job(pyname, .false.)

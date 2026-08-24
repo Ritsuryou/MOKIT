@@ -796,8 +796,12 @@ end subroutine check_gms_path
    case('gvb_conv')
     GVB_conv = longbuf(j+1:i-1)
     c_gvb_conv = .true.
+   case('skipuno')
+    read(longbuf(j+1:i-1),*) nskip_uno
    case('skip_uno')
     read(longbuf(j+1:i-1),*) nskip_uno
+    write(6,'(/,A)') 'Warning: `Skip_UNO` would be deprecated in the near futur&
+                     &e. Use `SkipUNO` instead.'
    case('root')
     read(longbuf(j+1:i-1),*) iroot
     ss_opt = .true. ! State-specific orbital optimization
@@ -952,8 +956,8 @@ end subroutine check_gms_path
   end select
 
   if(.not. mcpdft) otpdf = 'NONE'
-  dyn_corr = (caspt2 .or. nevpt2 .or. mrmp2 .or. mrcisd .or. mrcisdt .or. &
-              mcpdft .or. caspt3 .or. nevpt3 .or. nevpt4)
+  dyn_corr = (caspt2 .or. nevpt2 .or. mrmp2 .or. sdspt2 .or. mrcisd .or. mrcisdt&
+              .or. mcpdft .or. caspt3 .or. nevpt3 .or. nevpt4)
   if(RI) call determine_auxbas(basis,RIJK_bas, dyn_corr,RIC_bas, F12,F12_cabs)
   call prt_strategy()
  end subroutine parse_keyword
@@ -995,7 +999,7 @@ subroutine prt_strategy()
  write(6,'(3(A,L1,3X),2(A,I2,3X))') 'RelaxScan=',relaxed_scan,'excludeXH=',&
   excludeXH,'Polar   = ',polar,'XMult   =',xmult,'NewMult =',new_mult
 
- write(6,'(A,I2,3X,2(A,I1,3X),A,I0,3X,A)') 'Skip_UNO=',nskip_uno,'CtrType = ',&
+ write(6,'(A,I2,3X,2(A,I1,3X),A,I0,3X,A)') 'SkipUNO =',nskip_uno,'CtrType = ',&
       CtrType,'MRCC_type=',mrcc_type,'MaxM = ',maxM,'GVB_conv= '//TRIM(GVB_conv)
 
  write(6,'(A,F7.5,1X,A,F7.5)') 'LocalM  = '//TRIM(localm)//'  ON_thres= ',&
@@ -1128,29 +1132,23 @@ subroutine check_kywd_compatible()
   else
    cas_prog = casscf_prog
   end if
+  if(RI) then
+   select case(TRIM(cas_prog))
+   case('pyscf','orca','openmolcas','molpro','psi4')
+   case default
+    write(6,'(/,A)') error_warn//'CASCI/CASSCF with RI-JK is not supported'
+    write(6,'(A)') 'for CASCI_prog or CASSCF_prog='//TRIM(cas_prog)
+    write(6,'(A)') 'You should specify CASCI_prog or CASSCF_prog=PySCF/&
+                   &ORCA/OpenMolcas/Molpro/PSI4.'
+    stop
+   end select
+  end if
  end if
 
- if(RI) then
-  if(DKH2) then
-   write(6,'(/,A)') error_warn//'currently RI cannot be applied in DKH2 computa&
-                   &tions.'
-   stop
-  end if
-
-  if(.not. (casci .or. casscf)) then
-   write(6,'(/,A)') error_warn//'RI activated. But neither CASCI nor CASSCF is&
-                   & invoked.'
-   stop
-  end if
-  select case(cas_prog)
-  case('pyscf','orca','openmolcas','psi4','molpro')
-  case default
-   write(6,'(/,A)') error_warn//'CASCI/CASSCF with RI-JK is not supported'
-   write(6,'(A)') 'for CASCI_prog or CASSCF_prog='//TRIM(cas_prog)
-   write(6,'(A)') 'You should specify CASCI_prog or CASSCF_prog=PySCF/&
-                  &ORCA/OpenMolcas/Molpro/PSI4.'
-   stop
-  end select
+ if(RI .and. DKH2) then
+  write(6,'(/,A)') error_warn//'currently RI cannot be applied to'
+  write(6,'(A)') 'the DKH2 computation.'
+  stop
  end if
 
  if(F12) then
@@ -1316,13 +1314,6 @@ subroutine check_kywd_compatible()
   write(6,'(A)') 'MC-PDFT/CASPT2/CASPT3/NEVPT2/NEVPT3/NEVPT4SD/MRCISD/MRCC comp&
                  &utations. But'
   write(6,'(A)') 'none of them is specified.'
-  stop
- end if
-
- if(CIonly .and. TRIM(nevpt_prog)=='bdf') then
-  write(6,'(/,A)') error_warn//'currently CASCI-NEVPT2 is not supported in BDF &
-                  &program.'
-  write(6,'(A)') 'You may use NEVPT_prog=PySCF, Molpro, ORCA or OpenMolcas.'
   stop
  end if
 
@@ -1514,10 +1505,10 @@ subroutine check_kywd_compatible()
  end select
 
  select case(TRIM(nevpt_prog))
- case('pyscf','molpro','openmolcas','orca','bdf')
+ case('pyscf','orca','molpro','openmolcas','bdf','block2')
  case default
   write(6,'(/,A)') error_warn
-  write(6,'(A)') 'Supported NEVPT_prog=PySCF/ORCA/Molpro/OpenMolcas/BDF.'
+  write(6,'(A)') 'Supported NEVPT_prog=PySCF/ORCA/Molpro/OpenMolcas/BDF/Block2.'
   write(6,'(A)') 'User specified NEVPT program cannot be identified: '//TRIM(nevpt_prog)
   stop
  end select
@@ -1610,11 +1601,6 @@ subroutine check_kywd_compatible()
    write(6,'(/,A)') error_warn//'NEVPT2 with BDF program is incompatible with'
    write(6,'(A)') 'background point charges. You can use NEVPT_prog=ORCA or Mol&
                   &pro.'
-   stop
-  end if
-  if(FIC .and. TRIM(nevpt_prog)=='pyscf') then
-   write(6,'(/,A)') error_warn//'FIC-NEVPT2 is not supported by PySCF.'
-   write(6,'(A)') 'You can use NEVPT_prog=ORCA/OpenMolcas/Molpro/BDF.'
    stop
   end if
  end if

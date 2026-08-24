@@ -711,18 +711,13 @@ subroutine gen_hf_pyscf_inp(pyname, uhf)
  open(newunit=fid,file=TRIM(pyname),status='replace')
  write(fid,'(A)') 'from pyscf import gto, scf, lib'
  write(fid,'(A)') 'from mokit.lib.py2fch_direct import fchk'
- write(fid,'(A)') 'from mokit.lib.rwwfn import get_nmo_from_ao_ovlp, get_occ_fr&
-                  &om_na_nb'
+ write(fid,'(A)') 'from mokit.lib.rwwfn import get_nmo_from_ao_ovlp'
  write(fid,'(A)') 'from mokit.lib.stability import hf_stable_opt_internal'
- if(uhf .and. mult==1) then
-  write(fid,'(A)') 'from mokit.lib.rwwfn import ('
-  write(fid,'(4X,A)') 'read_nbf_and_nif_from_fch,'
-  write(fid,'(4X,A)') 'read_na_and_nb_from_fch,'
-  write(fid,'(4X,A)') 'get_occ_from_na_nb2'
-  write(fid,'(A)') ')'
-  write(fid,'(A)') 'from mokit.lib.fch2py import fch2py'
+ if(os_singlet) then
+  write(fid,'(A)') 'from mokit.lib.rwwfn import read_na_and_nb_from_fch, get_oc&
+                   &c_from_na_nb2'
+  write(fid,'(A)') 'from mokit.lib.gaussian import mo_fch2py'
  end if
- write(fid,'(A)') 'import numpy as np'
  write(fid,'(/,A,I0,A)') 'lib.num_threads(', nproc, ')'
 
  write(fid,'(A)') 'mol = gto.M()'
@@ -790,12 +785,9 @@ subroutine gen_hf_pyscf_inp(pyname, uhf)
                      &e-6)'
  if(os_singlet) then
   write(fid,'(/,A)') '# use broken symmetry initial guess generated from duplic&
-                     &ating RHF'
+                     &ating RHF MOs'
   write(fid,'(A)') "uhf_fch = '"//TRIM(fchname)//"'"
-  write(fid,'(A)') 'nbf, nif = read_nbf_and_nif_from_fch(uhf_fch)'
-  write(fid,'(A)') "coeff_a = fch2py(uhf_fch, nbf, nif, 'a')"
-  write(fid,'(A)') "coeff_b = fch2py(uhf_fch, nbf, nif, 'b')"
-  write(fid,'(A)') 'mo_coeff = np.array((coeff_a, coeff_b))'
+  write(fid,'(A)') 'mo_coeff = mo_fch2py(uhf_fch)'
   write(fid,'(A)') 'na, nb = read_na_and_nb_from_fch(uhf_fch)'
   write(fid,'(A)') 'mo_occ = get_occ_from_na_nb2(nif, na, nb)'
   write(fid,'(A)') 'dm = mf.make_rdm1(mo_coeff, mo_occ)'
@@ -804,25 +796,8 @@ subroutine gen_hf_pyscf_inp(pyname, uhf)
   write(fid,'(A)') 'mf.kernel()'
  end if
 
- write(fid,'(/,A)') 'invoke_newton = not mf.converged'
- write(fid,'(A)') 'def is_descending_np(arr):'
- write(fid,'(4X,A)') 'return np.all(arr[:-1] >= arr[1:])'
- write(fid,'(/,A)') 'if mf.converged and not is_descending_np(mf.mo_occ):'
- write(fid,'(4X,A)') 'if isinstance(mf, scf.uhf.UHF):'
- write(fid,'(8X,A)') 'raise OSError("PySCF UHF converged to non-aufbau SCF solution.")'
- write(fid,'(4X,A)') 'na, nb = mf.mol.nelec'
- write(fid,'(4X,A)') 'occ = get_occ_from_na_nb(nif, na, nb)'
- write(fid,'(4X,A)') 'dm = mf.make_rdm1(mo_occ=occ)'
- write(fid,'(4X,A)') 'mf.mo_occ = occ.copy()'
- write(fid,'(4X,A)') 'invoke_newton = True'
- write(fid,'(/,A)') 'if invoke_newton:'
- write(fid,'(4X,A)') 'mf = mf.newton()'
- write(fid,'(4X,A)') 'mf.kernel()'
- write(fid,'(4X,A)') 'if mf.converged is False:'
- write(fid,'(8X,A)') 'raise OSError("PySCF R(O)HF job failed.")'
-
  if(uhf) then ! UHF
-  write(fid,'(/,A)') '# stable=opt'
+  write(fid,'(/,A)') '# check mf.converged and do stable=opt'
   write(fid,'(A)') 'mf = hf_stable_opt_internal(mf)'
   write(fid,'(/,A)') '# save UHF MOs into .fch file'
   if(mult > 1) then
@@ -835,7 +810,7 @@ subroutine gen_hf_pyscf_inp(pyname, uhf)
   end if
   write(fid,'(A)') 'fchk(mf, uhf_fch, density=True)'
  else         ! R(O)HF
-  write(fid,'(/,A)') '# stable=opt'
+  write(fid,'(/,A)') '# check mf.converged and do stable=opt'
   write(fid,'(A)') 'mf = hf_stable_opt_internal(mf)'
   write(fid,'(/,A)') '# save R(O)HF MOs into .fch file'
   write(fid,'(A)') "rhf_fch = '"//TRIM(fchname)//"'"
@@ -1071,7 +1046,7 @@ subroutine do_scf_and_read_e(gau_path, hf_prog_path, inpname, noiter, e, ssquare
   if(bgchg) call add_bgcharge2inp_wrap(chgname, inpname)
 
   call submit_psi4_job(psi4_path, inpname, nproc)
-  call read_hf_e_and_ss_from_psi4_out(outname, hf_type, e, ssquare)
+  call read_scf_e_and_ss_from_psi4_out(outname, hf_type, e, ssquare)
   e = e + ptchg_e
 
   call delete_file(inpname)
@@ -1158,72 +1133,6 @@ subroutine read_hf_e_and_ss_from_pyscf_out(outname, wfn_type, e, ss)
   stop
  end select
 end subroutine read_hf_e_and_ss_from_pyscf_out
-
-! read HF electronic energy from a PSI4 .out file
-subroutine read_hf_e_and_ss_from_psi4_out(outname, hf_type, e, ss)
- implicit none
- integer :: i, mult, fid
- integer, intent(in) :: hf_type
- real(kind=8), intent(out) :: e, ss
- character(len=240) :: buf
- character(len=240), intent(in) :: outname
-
- e = 0d0; ss = 0d0
- open(newunit=fid,file=TRIM(outname),status='old',position='append')
- ! There are two HF energies in this file, we should begin from the end of file
- do while(.true.)
-  BACKSPACE(fid,iostat=i)
-  if(i /= 0) exit
-  BACKSPACE(fid,iostat=i)
-  if(i /= 0) exit
-  read(fid,'(A)') buf
-  if(buf(5:14) == 'HF Final E') exit
- end do ! for while
-
- if(i /= 0) then
-  write(6,'(/,A)') "ERROR in subroutine read_hf_e_and_ss_from_psi4_out: no 'HF &
-                   &Final E' found"
-  write(6,'(A)') 'in file '//TRIM(outname)
-  close(fid)
-  stop
- end if
-
- i = INDEX(buf, ':')
- read(buf(i+1:),*) e
-
- select case(hf_type)
- case(1) ! RHF
-  close(fid)
-  call read_mult_from_psi4_out(outname, mult)
-  ss = DBLE(mult*(mult+1))
-
- case(3)   ! UHF
-  do while(.true.)
-   BACKSPACE(fid,iostat=i)
-   if(i /= 0) exit
-   BACKSPACE(fid,iostat=i)
-   if(i /= 0) exit
-   read(fid,'(A)') buf
-   if(buf(5:16) == 'S^2 Observed') exit
-  end do ! for while
-
-  close(fid)
-  if(i /= 0) then
-   write(6,'(A)') "ERROR in subroutine read_hf_e_and_ss_from_psi4_out: no 'S^2 &
-                  &Observed' found"
-   write(6,'(A)') 'in file '//TRIM(outname)
-   stop
-  end if
-  i = INDEX(buf, ':', back=.true.)
-  read(buf(i+1:),*) ss
-
- case default
-  write(6,'(A,I0)') 'ERROR in subroutine read_hf_e_and_ss_from_psi4_out: invali&
-                    &d hf_type=', hf_type
-  stop
- end select
-
-end subroutine read_hf_e_and_ss_from_psi4_out
 
 ! read spin square <S^2> from a specified ORCA output file
 subroutine read_spin_square_from_orca_out(outname, hf_type, ss)
@@ -1421,31 +1330,6 @@ subroutine read_mult_from_pyscf_inp(inpname, mult)
  read(buf(i+1:),*) mult ! this is No.(alpha-beta)
  mult = mult + 1
 end subroutine read_mult_from_pyscf_inp
-
-! read spin multiplicity from a PSI4 output file
-subroutine read_mult_from_psi4_out(outname, mult)
- implicit none
- integer :: i, fid
- integer, intent(out) :: mult
- character(len=240) :: buf
- character(len=240), intent(in) :: outname
-
- open(newunit=fid,file=TRIM(outname),status='old',position='rewind')
- do while(.true.)
-  read(fid,'(A)',iostat=i) buf
-  if(i /= 0) exit
-  if(buf(3:14) == 'Multiplicity') exit
- end do ! for while
-
- close(fid)
- if(i /= 0) then
-  write(6,'(A)') "ERROR in subroutine read_mult_from_psi4_out: no 'Multiplicit&
-                 &y' found in file "//TRIM(outname)
-  stop
- end if
- i = INDEX(buf,'=',back=.true.)
- read(buf(i+1:),*) mult
-end subroutine read_mult_from_psi4_out
 
 ! read spin multiplicity from an ORCA output file
 subroutine read_mult_from_orca_out(outname, mult)

@@ -1850,8 +1850,15 @@ end subroutine calc_CTSCp
 subroutine calc_CTSCp2(nbf, nif1, nif2, C, S, Cp, CTSCp)
  implicit none
  integer, intent(in) :: nbf, nif1, nif2
+!f2py intent(in) :: nbf, nif1, nif2
  real(kind=8), intent(in) :: C(nbf,nif1), S(nbf,nbf), Cp(nbf,nif2)
+!f2py intent(in) :: C, S, Cp
+!f2py depend(nbf,nif1) :: C
+!f2py depend(nbf) :: S
+!f2py depend(nbf,nif2) :: Cp
  real(kind=8), intent(out) :: CTSCp(nif1,nif2)
+!f2py intent(out) :: CTSCp
+!f2py depend(nif1,nif2) :: CTSCp
  real(kind=8), allocatable :: SCp(:,:)
 
  CTSCp = 0d0
@@ -2232,7 +2239,7 @@ subroutine solve_ovlp_from_cct(nbf, C, S)
 end subroutine solve_ovlp_from_cct
 
 ! solve AO-based Fock matrix (F) from equation (C^T)FC=E
-subroutine solve_fock_from_ctfc(nbf, nif, C, E, F)
+subroutine solve_fock_from_ctfc(nbf, nif, C, E, ao_fock)
  implicit none
  integer :: i
  integer, intent(in) :: nbf, nif
@@ -2241,10 +2248,10 @@ subroutine solve_fock_from_ctfc(nbf, nif, C, E, F)
 !f2py intent(in) :: C, E
 !f2py depend(nbf,nif) :: C
 !f2py depend(nif) :: E
- real(kind=8), intent(out) :: F(nbf,nbf)
-!f2py intent(out) :: F
-!f2py depend(nbf) :: F
- real(kind=8), allocatable :: FC(:,:), E1(:,:)
+ real(kind=8), intent(out) :: ao_fock(nbf,nbf)
+!f2py intent(out) :: ao_fock
+!f2py depend(nbf) :: ao_fock
+ real(kind=8), allocatable :: c_t(:,:), FC(:,:), E1(:,:)
 
  if(nbf > nif) then
   write(6,'(/,A)') 'Warning from subroutine solve_fock_from_ctfc: nbf > nif. Ba&
@@ -2255,13 +2262,53 @@ subroutine solve_fock_from_ctfc(nbf, nif, C, E, F)
  end if
 
  allocate(E1(nif,nif), source=0d0)
- forall(i = 1:nif) E1(i,i) = E(i) ! diagonal matrix
+ do i = 1, nif, 1
+  E1(i,i) = E(i) ! diagonal matrix
+ end do ! for i
+
  allocate(FC(nbf,nif))
- call solve_multi_lin_eqs(nif, nbf, TRANSPOSE(C), nif, E1, FC)
+ allocate(c_t(nif,nbf), source=TRANSPOSE(C))
+ call solve_multi_lin_eqs(nif, nbf, c_t, nif, E1, FC)
  deallocate(E1)
+
  ! FC = X -> (C^T)(F^T) = X^T, (F^T) = F
- call solve_multi_lin_eqs(nif, nbf, TRANSPOSE(C), nif, TRANSPOSE(FC), F)
+ call solve_multi_lin_eqs(nif, nbf, c_t, nif, TRANSPOSE(FC), ao_fock)
+ deallocate(c_t, FC)
 end subroutine solve_fock_from_ctfc
+
+! F = SCE(C^T)S
+subroutine calc_fock_from_ces(nbf, nif, mo, mo_e, ao_ovlp, ao_fock)
+ implicit none
+ integer :: i
+ integer, intent(in) :: nbf, nif
+ real(kind=8), intent(in) :: mo(nbf,nif), mo_e(nif), ao_ovlp(nbf,nbf)
+ real(kind=8), intent(out) :: ao_fock(nbf,nbf)
+ real(kind=8), allocatable :: e1(:,:), cnct(:,:), scnct(:,:)
+
+ ao_fock = 0d0
+ if(nbf > nif) then
+  write(6,'(/,A)') 'Warning from subroutine calc_fock_from_ces: nbf > nif. Basi&
+                   &s set linear'
+  write(6,'(A)') 'dependency detected. The AO Fock matrix obtained by this subr&
+                 &outine may be'
+  write(6,'(A)') 'nonsense. You need to check.'
+ end if
+
+ allocate(e1(nif,nif), source=0d0)
+ do i = 1, nif, 1
+  e1(i,i) = mo_e(i) ! diagonal matrix
+ end do ! for i
+
+ allocate(cnct(nbf,nbf))
+ call calc_cnct(nbf, nif, mo, e1, cnct)
+ deallocate(e1)
+
+ allocate(scnct(nbf,nbf), source=0d0)
+ call dsymm('L','U',nbf,nbf,1d0,ao_ovlp,nbf,cnct,nbf,0d0,scnct,nbf)
+ deallocate(cnct)
+ call dsymm('R','U',nbf,nbf,1d0,ao_ovlp,nbf,scnct,nbf,0d0,ao_fock,nbf)
+ deallocate(scnct)
+end subroutine calc_fock_from_ces
 
 ! construct partial/all virtual orbitals using the PAO (projected atomic orbitals)
 subroutine construct_vir(nbf, nif, idx, coeff, ovlp, new_mo)
@@ -2318,6 +2365,7 @@ subroutine construct_vir(nbf, nif, idx, coeff, ovlp, new_mo)
  deallocate(ev, s1)
 
  ! Step 5: get new virtual MO coefficients
+ new_mo(:,idx:nif) = 0d0
  call dgemm('N','N', nbf,nvir,nbf, 1d0,v,nbf, x,nbf, 0d0,new_mo(:,idx:nif),nbf)
  deallocate(x, v)
 

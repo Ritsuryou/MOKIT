@@ -10,19 +10,43 @@
 program main
  use util_wrapper, only: formchk
  implicit none
- integer :: i
+ integer :: i, narg
+ integer :: dis_type ! 0/1/2/3 for none/D3/D3BJ/D4
+ character(len=4) :: str4
+ character(len=30) :: dftname
+ character(len=26), parameter :: error_warn = 'ERROR in program fch2amo: '
  character(len=240) :: fchname
 
- i = iargc()
- if(i /= 1) then
-  write(6,'(/,A)') ' ERROR in program fch2amo: wrong command line arguments!'
-  write(6,'(A,/)') ' Example: fch2amo water.fch'
+ narg = iargc()
+ if(.not. (narg==1 .or. narg==3)) then
+  write(6,'(/,1X,A)') error_warn//'wrong command line arguments!'
+  write(6,'(A)') ' Example 1: fch2amo water.fch'
+  write(6,'(A)') ' Example 2: fch2amo water.fch -dft "B3LYP"'
+  write(6,'(A)') ' Example 3: fch2amo water.fch -dft "B3LYP D3"'
+  write(6,'(A)') ' Example 4: fch2amo water.fch -dft "B3LYP D3BJ"'
+  write(6,'(A)') ' Example 5: fch2amo water.fch -dft "M062X"'
+  write(6,'(/,A,/)') ' Remember to run `a2m xxx.amo` before you start an Amesp &
+                     &calculation.'
   stop
  end if
 
- fchname = ' '
+ dftname = ' '; fchname = ' '
  call getarg(1, fchname)
  call require_file_exist(fchname)
+
+ if(narg > 1) then
+  call getarg(2, str4)
+  if(TRIM(str4) == '-dft') then
+   call getarg(3, dftname)
+   dftname = ADJUSTL(dftname)
+   call upper(dftname)
+   call find_dis_type_from_dftname(dftname, dis_type)
+  else
+   write(6,'(/,A)') error_warn//'the 2nd argument is wrong!'
+   write(6,'(A)') 'Currently only `-dft` is accepted.'
+   stop
+  end if
+ end if
 
  ! if .chk file provided, convert into .fch file automatically
  i = LEN_TRIM(fchname)
@@ -31,13 +55,16 @@ program main
   fchname = fchname(1:i-3)//'fch'
  end if
 
- call fch2amo(fchname)
+ call fch2amo(fchname, dftname, dis_type)
+ write(6,'(/,A,/)') ' Remember to run `a2m xxx.amo` before you start an Amesp c&
+                    &alculation.'
 end program main
 
-subroutine fch2amo(fchname)
+subroutine fch2amo(fchname, dftname, dis_type)
  use fch_content
  implicit none
  integer :: i, j, k, m, n, n1, n2, p, q, nelmtyp, length, icart, fid
+ integer, intent(in) :: dis_type
  integer, parameter :: shltyp2nbas(-5:5) = [21,15,10,6,4,1,3,6,10,15,21]
  integer, allocatable :: frozen_e(:) ! size natom, frozen core electrons
  integer, allocatable :: natmbas(:) ! the number of basis functions of each atom
@@ -49,10 +76,29 @@ subroutine fch2amo(fchname)
  character(len=1), parameter :: am_type(-1:6) = ['L','S','P','D','F','G','H','I']
  character(len=1), parameter :: am_type1(0:6) = ['s','p','d','f','g','h','i']
  character(len=3) :: sph_str
- character(len=240) :: inpname, amoname
+ character(len=29), parameter :: error_warn = 'ERROR in subroutine fch2amo: '
+ character(len=30) :: dftname1
+ character(len=30), intent(in) :: dftname
  character(len=240), intent(in) :: fchname
- logical :: uhf, sph, has_sp, ecp
+ character(len=240) :: inpname, amoname
+ logical :: uhf, sph, has_sp, ecp, dft
  logical, allocatable :: skip_elem(:) ! .True. for skipping this element
+
+ dft = .false.
+ k = LEN_TRIM(dftname)
+ if(k > 0) then
+  dft = .true.
+  select case(dftname(1:k))
+  case('M062X')
+   dftname1 = 'M06-2X'
+  case('M052X')
+   dftname1 = 'M05-2X'
+  case('CAMB3LYP')
+   dftname1 = 'CAM-B3LYP'
+  case default
+   dftname1 = dftname
+  end select
+ end if
 
  call find_specified_suffix(fchname, '.fch', i)
  inpname = fchname(1:i-1)//'.aip'
@@ -74,15 +120,27 @@ subroutine fch2amo(fchname)
  open(newunit=fid,file=TRIM(inpname),status='replace')
  write(fid,'(A)') '% npara 4'
  write(fid,'(A)') '% maxcore 1000'
-
  write(fid,'(A)',advance='no') '! '
- if(uhf) then
-  write(fid,'(A)',advance='no') 'uhf'
- else ! RHF, ROHF
-  if(mult == 1) then
-   write(fid,'(A)',advance='no') 'hf'
-  else
-   write(fid,'(A)',advance='no') 'rohf'
+
+ if(dft) then
+  if(uhf) then
+   write(fid,'(A)',advance='no') 'U'//TRIM(dftname1)
+  else ! RHF, ROHF
+   if(mult == 1) then
+    write(fid,'(A)',advance='no') TRIM(dftname1)
+   else
+    write(fid,'(A)',advance='no') 'RO'//TRIM(dftname1)
+   end if
+  end if
+ else
+  if(uhf) then
+   write(fid,'(A)',advance='no') 'uhf'
+  else ! RHF, ROHF
+   if(mult == 1) then
+    write(fid,'(A)',advance='no') 'hf'
+   else
+    write(fid,'(A)',advance='no') 'rohf'
+   end if
   end if
  end if
 
@@ -91,14 +149,32 @@ subroutine fch2amo(fchname)
   write(fid,'(A)',advance='no') ' sfx2c1e'
  case(-1) ! do nothing
  case default
-  write(6,'(/,A)') 'ERROR in subroutine fch2amo: irel out of range!'
+  write(6,'(/,A,I0)') error_warn//'invalid irel=', irel
   write(6,'(A)') 'Amesp does not support this type of Hamiltonian.'
   close(fid)
   stop
  end select
+
+ select case(dis_type)
+ case(0) ! no dispersion correction
+ case(1) ! D3, D3zero, D3(0)
+  write(fid,'(A)',advance='no') ' d3'
+ case(2) ! D3BJ, D3(BJ)
+  write(fid,'(A)',advance='no') ' d3bj'
+ case default
+  write(6,'(/,A,I0)') error_warn//'invalid dis_type=', dis_type
+  write(6,'(A)') 'This type of dispersion correction is not supported.'
+  stop
+ end select
  write(fid,'(A)') ' define'
 
- if(ANY(shell_type>1)) write(fid,'(A,/,A,/,A)') '>ope',' inttype car','end'
+ if(dft .or. ANY(shell_type>1)) then
+  write(fid,'(A)') '>ope'
+  if(ANY(shell_type>1)) write(fid,'(A)') ' inttype car'
+  if(dft) write(fid,'(A)') ' grid lv4'
+  write(fid,'(A)') 'end'
+ end if
+
  write(fid,'(A)') '>scf'
  write(fid,'(A)') ' guess read'
  write(fid,'(A)') ' scfmode direct'

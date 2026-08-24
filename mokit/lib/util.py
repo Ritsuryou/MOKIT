@@ -7,7 +7,6 @@ utility functions
 3) misc
 ''' 
 
-import shutil
 import numpy as np
 from mokit.lib.gaussian import get_bfirst_from_mol, load_mol_from_fch
 from mokit.lib.rwwfn import (
@@ -16,7 +15,6 @@ from mokit.lib.rwwfn import (
     read_eigenvalues_from_fch
 )
 from mokit.lib.fch2py import fch2py
-from mokit.lib.py2fch import py2fch
 
 ON_criteria = 1e-5
 
@@ -456,6 +454,8 @@ def mo_g_int(fnames, x, na=None, nb=None, trace_PS=False):
     from mokit.lib.qchem import read_hf_type_from_fch, construct_vir
     from mokit.lib.mirror_wfn import mo_grassmann_intrplt
     from mokit.lib.rwgeom import replace_coor_in_fch_by_gjf
+    from mokit.lib.py2fch import py2fch
+    import shutil
 
     nfile = len(fnames)
     if nfile < 2:

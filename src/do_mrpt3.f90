@@ -92,15 +92,7 @@ subroutine do_mrpt3()
    i = RENAME(TRIM(string), TRIM(inpname))
    call prt_mrpt_bdf_inp(inpname, 3) ! 1/2/3 for SDSPT2/NEVPT2/NEVPT3
    if(bgchg) call add_bgcharge2inp_wrap(chgname, inpname)
-   call find_specified_suffix(inpname, '.inp', i)
-   string = inpname(1:i-1)
-   i = SYSTEM(TRIM(bdf_path)//' '//TRIM(string))
-   if(i /= 0) then
-    write(6,'(/,A)') 'ERROR in subroutine do_mrpt3: NEVPT3 computation failed i&
-                     &n BDF.'
-    write(6,'(A)') 'You can open file '//TRIM(outname)//' and check why.'
-    stop
-   end if
+   call submit_bdf_job(inpname, nproc)
   case default
    write(6,'(/,A)') 'ERROR in subroutine do_mrpt3: NEVPT_prog cannot be recogn&
                     &ized. Allowed'

@@ -2,16 +2,16 @@
 ! updated by jxzou at 20210224: add CASPT2 interface with ORCA
 
 ! Warning: fully occupied active space like (14e,7o) is allowed in NEVPT2, and
-!  the NEVPT2 energy is not equal to MP2 energy. Moreover, the NEVPT2 energy will
-!  vary with which seven doubly occupied MOs are put into this active space. And
-!  the energy also varies for (2e,1o), (4e,2o), etc. This is because the NEVPT
+!  the NEVPT2 energy is not equal to RHF-MP2 energy. Moreover, the NEVPT2 energy
+!  will vary with which seven doubly occupied MOs are put into this active space.
+!  And the energy also varies for (2e,1o), (4e,2o), etc. This is because the NEVPT
 !  zero-th order Hamiltonian is the Dyall Hamiltonian which includes two-body
-!  interactions. This might cause a problem: if the user tries to perform an NEVPT2
-!  calculation using a set of converged RHF/CASSCF MOs, and seven doubly occupied
-!  MOs (which are not HOMO-6 ~ HOMO) have been put in the active space, the CAS-
-!  SCF orbital optimization will destroy these seven doubly occupied MOs, and
-!  further leads to a different NEVPT2 energy subsequently. But the CASSCF energy
-!  is almost unchaged in such case (because CASSCF is invariant to orbital rota-
+!  interactions. This might cause a potential problem: if the user tries to perform
+!  an NEVPT2 calculation using a set of converged RHF/CASSCF MOs, and seven doubly
+!  occupied MOs (which are not HOMO-6 ~ HOMO) have been put in the active space,
+!  the CASSCF orbital optimization will destroy these seven doubly occupied MOs,
+!  and further leads to a different NEVPT2 energy subsequently. But the CASSCF
+!  energy is unchaged in such case (because CASSCF is invariant to orbital rota-
 !  tions within the doubly occupied subspace). So the user can hardly figure out
 !  what happened.
 ! The CASCI NOs generation might also destroy the prepared doubly occupied MOs.
@@ -34,9 +34,10 @@ subroutine do_mrpt2()
  implicit none
  integer :: i, SYSTEM, RENAME
  character(len=24) :: data_string
+ character(len=30), parameter :: error_warn = 'ERROR in subroutine do_mrpt2: '
  character(len=240) :: string, pyname, outname, inpname, inporb
  character(len=240) :: mklname, cmofch
- real(kind=8) :: ref_e, corr_e
+ real(kind=8) :: ref_e, ssquare, corr_e
  logical :: alive(5)
 
  if(eist == 1) return ! excited state calculation
@@ -46,30 +47,29 @@ subroutine do_mrpt2()
 
  if((dmrgci .or. dmrgscf)) then
   if(mrmp2) then
-   write(6,'(/,A)') 'ERROR in subroutine do_mrpt2: DMRG-MRMP2 not supported.'
+   write(6,'(/,A)') error_warn//'DMRG-MRMP2 not supported.'
    stop
   end if
   if(sdspt2) then
-   write(6,'(/,A)') 'ERROR in subroutine do_mrpt2: DMRG-SDSPT2 not supported.'
+   write(6,'(/,A)') error_warn//'DMRG-SDSPT2 not supported.'
    stop
   end if
   if(ovbmp2) then
-   write(6,'(/,A)') 'ERROR in subroutine do_mrpt2: DMRG-OVB-MP2 not supported.'
+   write(6,'(/,A)') error_warn//'DMRG-OVB-MP2 not supported.'
    stop
   end if
   if(nevpt2) then
    select case(TRIM(nevpt_prog))
    case('molpro', 'orca')
-    write(6,'(/,A)') 'ERROR in subroutine do_mrpt2: DMRG-NEVPT2 is only support&
-                     &ed with PySCF or OpenMolcas.'
-    write(6,'(A)') 'But you specify NEVPT_prog='//TRIM(nevpt_prog)
+    write(6,'(/,A)') error_warn//'DMRG-NEVPT2 is only supported with NEVPT_prog&
+                    &=PySCF'
+    write(6,'(A)') 'or OpenMolcas. But got NEVPT_prog='//TRIM(nevpt_prog)
     stop
    end select
   end if
   if(caspt2 .and. TRIM(caspt_prog)/='openmolcas') then
-   write(6,'(/,A)') 'ERROR in subroutine do_mrpt2: DMRG-CASPT2 is only supporte&
-                    &d with OpenMolcas.'
-   write(6,'(A)') 'But you specify CASPT_prog='//TRIM(caspt_prog)
+   write(6,'(/,A)') error_warn//'DMRG-CASPT2 is only supported with OpenMolcas.'
+   write(6,'(A)') 'But got CASPT_prog='//TRIM(caspt_prog)
    stop
   end if
  end if
@@ -126,8 +126,14 @@ subroutine do_mrpt2()
  write(6,'(A)',advance='no') 'Frozen_core = F, '
 
  if(nevpt2) then
+  if(FIC) then
+   write(6,'(A)',advance='no') 'FIC-'
+  else
+   write(6,'(A)',advance='no') 'SC-'
+  end if
   write(6,'(A,2(I0,A))') 'NEVPT2(',nacte,'e,',nacto,'o) using program '//&
                          TRIM(nevpt_prog)
+
   select case(TRIM(nevpt_prog))
   case('pyscf')
    ! For DMRG-NEVPT2, use CMOs rather than NOs
@@ -207,6 +213,10 @@ subroutine do_mrpt2()
    call prt_mrpt_bdf_inp(inpname, 2)
    if(bgchg) call add_bgcharge2inp_wrap(chgname, inpname)
    call submit_bdf_job(inpname, nproc)
+
+  case default
+   write(6,'(/,A)') error_warn//'invalid NEVPT_prog='//TRIM(nevpt_prog)
+   stop
   end select
 
  else if(caspt2) then ! CASPT2
@@ -263,6 +273,10 @@ subroutine do_mrpt2()
    call mkl2gbw(mklname)
    call delete_file(mklname)
    call submit_orca_job(orca_path, inpname, .true., .false., .false.)
+
+  case default
+   write(6,'(/,A)') error_warn//'invalid CASPT_prog='//TRIM(caspt_prog)
+   stop
   end select
 
  else if(mrmp2) then ! CASSCF-MRMP2
@@ -309,9 +323,7 @@ subroutine do_mrpt2()
 
   call prt_mrpt_bdf_inp(inpname, 1)
   if(bgchg) call add_bgcharge2inp_wrap(chgname, inpname)
-  call find_specified_suffix(inpname, '.inp', i)
-  string = inpname(1:i-1)
-  i = SYSTEM(TRIM(bdf_path)//' '//TRIM(string))
+  call submit_bdf_job(inpname, nproc)
  end if
 
  if(nevpt2) then      ! read NEVPT2 energy
@@ -319,7 +331,8 @@ subroutine do_mrpt2()
   case('pyscf')
    call read_target_root_from_pyscf_out(outname, i, alive(1))
    if(alive(1)) target_root = i
-   call read_mrpt_energy_from_pyscf_out(outname, target_root, ref_e, corr_e)
+   call read_mrpt_energy_from_pyscf_out(outname, target_root, ssquare, ref_e, &
+                                        corr_e)
    ref_e = ref_e + ptchg_e
   case('molpro')
    if(FIC) then
@@ -412,8 +425,7 @@ subroutine do_mrpt2()
   case('openmolcas')
    call read_grad_from_molcas_out(outname, natom, grad)
   case default
-   write(6,'(/,A)') 'ERROR in subroutine do_mrpt2: program cannot be identified.'
-   write(6,'(A)') 'CASPT_prog='//TRIM(caspt_prog)
+   write(6,'(/,A)') error_warn//'invalid CASPT_prog='//TRIM(caspt_prog)
    stop
   end select
 
@@ -710,22 +722,22 @@ subroutine prt_caspt2_orca_inp(inpname)
  i = RENAME(TRIM(inpname1), TRIM(inpname))
 end subroutine prt_caspt2_orca_inp
 
-! print NEVPT2 script into a given .py file
+! print SC-/PC-NEVPT2 script into a given .py script
 subroutine prt_nevpt2_script_into_py(pyname)
  use mol, only: mult, nacto, nacta, nactb
- use mr_keyword, only: mem, nproc, casci, casscf, maxM, RI, RIJK_bas, hardwfn, &
-  crazywfn, xmult, iroot, target_root, block_mpi
+ use mr_keyword, only: mem, nproc, dmrgci, dmrgscf, maxM, hardwfn, crazywfn, &
+  xmult, iroot, nstate, FIC, RI, RIJK_bas, block_mpi
  implicit none
- integer :: i, nroots, fid1, fid2, RENAME
- real(kind=8) :: xss
+ integer :: i, fid1, fid2, RENAME
  character(len=21) :: RIJK_bas1
  character(len=240) :: buf, pyname1
  character(len=240), intent(in) :: pyname
- logical :: alive
+ logical :: dmrg
 
- if(RI) call auxbas_convert(RIJK_bas, RIJK_bas1, 1)
+ dmrg = (dmrgci .or. dmrgscf)
  call find_specified_suffix(pyname, '.py', i)
  pyname1 = pyname(1:i-1)//'.t'
+
  open(newunit=fid1,file=TRIM(pyname),status='old',position='rewind')
  open(newunit=fid2,file=TRIM(pyname1),status='replace')
 
@@ -735,12 +747,17 @@ subroutine prt_nevpt2_script_into_py(pyname)
   write(fid2,'(A)') TRIM(buf)
  end do ! for while
 
- if(casci .or. casscf) then
-  buf = TRIM(buf)//', mcscf, mrpt'
+ if(dmrg) then
+  buf = TRIM(buf)//', mcscf, dmrgscf'
+  if(.not. FIC) buf = TRIM(buf)//', mrpt'
+  write(fid2,'(A)') TRIM(buf)
  else
-  buf = TRIM(buf)//', mcscf, dmrgscf, mrpt'
+  buf = TRIM(buf)//', mcscf'
+  if(.not. FIC) buf = TRIM(buf)//', mrpt'
+  write(fid2,'(A)') TRIM(buf)
+  write(fid2,'(A)') 'from mokit.lib.auto import casci_wrapper'
  end if
- write(fid2,'(A)') TRIM(buf)
+ if(FIC) write(fid2,'(A)') 'from pyblock2.icmr.icnevpt2_full import WickICNEVPT2'
 
  do while(.true.)
   read(fid1,'(A)') buf
@@ -748,13 +765,13 @@ subroutine prt_nevpt2_script_into_py(pyname)
   write(fid2,'(A)') TRIM(buf)
  end do ! for while
 
- if(casci .or. casscf) then
-  write(fid2,'(/,A,I0)') 'nproc = ', nproc
- else
+ if(dmrg) then
   write(fid2,'(/,A)',advance='no') "dmrgscf.settings.MPIPREFIX = '"
   if(block_mpi) write(fid2,'(A,I0)',advance='no') 'mpirun -n ', nproc
   write(fid2,'(A)') "'"
   write(fid2,'(A,I0)') 'nproc = ', nproc
+ else
+  write(fid2,'(/,A,I0)') 'nproc = ', nproc
  end if
  write(fid2,'(A)') 'lib.num_threads(nproc)'
 
@@ -765,7 +782,12 @@ subroutine prt_nevpt2_script_into_py(pyname)
   if(buf(1:9) == 'mf.kernel') exit
   write(fid2,'(A)') TRIM(buf)
  end do ! for while
+
  write(fid2,'(A,I0,A)') 'mf.max_memory = ', mem*1000, ' # MB'
+ if(RI) then
+  call auxbas_convert(RIJK_bas, RIJK_bas1, 1)
+  write(fid2,'(A)') "mf = mf.density_fit(auxbasis='"//TRIM(RIJK_bas1)//"')"
+ end if
  write(fid2,'(A)') TRIM(buf)
 
  do while(.true.)
@@ -775,19 +797,8 @@ subroutine prt_nevpt2_script_into_py(pyname)
  end do
  close(fid1,status='delete')
 
- write(fid2,'(A)') '# generate CASCI wfn'
- write(fid2,'(3(A,I0),A)',advance='no') 'mc = mcscf.CASCI(mf,', nacto, ',(', &
-                                        nacta, ',', nactb, ')'
- if(RI) then
-  write(fid2,'(A)') ").density_fit(auxbasis='"//TRIM(RIJK_bas1)//"')"
- else
-  write(fid2,'(A)') ')'
- end if
-
- if(casci .or. casscf) then
-  write(fid2,'(A,I0,A)') 'mc.max_memory = ', mem*700, ' # MB'
-  write(fid2,'(A,I0,A)') 'mc.fcisolver.max_memory = ', mem*300, ' # MB'
- else
+ if(dmrg) then ! DMRG-NEVPT2
+  write(fid2,'(3(A,I0),A)')'mc = mcscf.CASCI(mf,',nacto,',(',nacta,',',nactb,'))'
   write(fid2,'(A,I0,A)') 'mc.fcisolver = dmrgscf.DMRGCI(mol, maxM=', maxM, ')'
   if(block_mpi) then
    i = CEILING(0.5*REAL(mem)/REAL(nproc))
@@ -798,95 +809,102 @@ subroutine prt_nevpt2_script_into_py(pyname)
    write(fid2,'(A)') 'mc.fcisolver.threads = nproc'
   end if
   write(fid2,'(A,I0,A)') 'mc.fcisolver.memory = ', i, ' # GB'
- end if
-
- ! TODO: use .gjf/.fch related filename. 'ss-cas.txt' is a temporary solution.
- inquire(file='ss-cas.txt',exist=alive)
- if(iroot > 0) then
-  if(alive) then
-   call read_ss_root_from_txt(nroots, target_root)
+  if(crazywfn) then
+   write(fid2,'(A,I0)') 'mc.fcisolver.nroots = ', iroot+3
+  else if(hardwfn) then
+   write(fid2,'(A,I0)') 'mc.fcisolver.nroots = ', iroot+2
   else
-   nroots = iroot + 4
+  if(iroot>0) write(fid2,'(A,I0)') 'mc.fcisolver.nroots = ', iroot+1
   end if
-  write(fid2,'(A,I0)') 'nroots = ', nroots
-  write(fid2,'(A)') 'mc.fcisolver.nroots = nroots'
- end if
-
- if(casci .or. casscf) then
-  call prt_hard_or_crazy_casci_pyscf(0, fid2, nacta-nactb, hardwfn, crazywfn)
- end if
- write(fid2,'(A)') 'mc.verbose = 5'
- write(fid2,'(A)') 'mc.kernel()'
-
- if(casci .or. casscf) then ! CASCI based NEVPT2
-  if(iroot > 0) then ! find target_root
-   if(alive) then
-    write(fid2,'(A,I0)') 'target_root = ', target_root
-   else
-    if(xmult == mult) then
-     write(fid2,'(A)') 'iroot = -1'
-    else
-     write(fid2,'(A)') 'iroot = 0'
-    end if
-    write(fid2,'(A)') 'for i in range(nroots):'
-    write(fid2,'(2X,A)') 'ss = mc.fcisolver.spin_square(mc.ci[i], mc.ncas, mc.nelecas)'
-    xss = 0.25d0*DBLE(xmult*xmult - 1)
-    write(fid2,'(2X,A,F0.3,A)') 'if abs(ss[0] - ',xss,') < 1e-4:'
-    write(fid2,'(4X,A)') 'iroot = iroot + 1'
-    write(fid2,'(2X,A,I0,A)') 'if iroot == ',iroot,':'
-    write(fid2,'(4X,A)') 'break'
-    write(fid2,'(A)') 'target_root = i'
-    write(fid2,'(A)') "print('target_root= %d' % i)"
-   end if
+  write(fid2,'(A)') 'mc.verbose = 5'
+  write(fid2,'(A)') 'mc.kernel()'
+  call prt_dmrg_nevpt2_setting(fid2, iroot, nstate, maxM, FIC)
+ else          ! CASCI/CASSCF based NEVPT2
+  write(fid2,'(3(A,I0),A)',advance='no')'mc = casci_wrapper(mf,', nacto, ',(',&
+                                        nacta, ',', nactb, ')'
+  if(iroot > 0) then
+   write(fid2,'(A,I0)',advance='no') ', iroot=', iroot
+   if(xmult /= mult) write(fid2,'(A,I0)',advance='no') ', mult=', xmult
   end if
-  write(fid2,'(/,A)',advance='no') 'mrpt.NEVPT(mc'
-  if(iroot > 0) write(fid2,'(A,I0)',advance='no') ', root=target_root'
-  write(fid2,'(A)') ').kernel()'
- else                       ! DMRG-CASCI based NEVPT2
-  call prt_dmrg_nevpt2_setting(fid2)
+  write(fid2,'(A)',advance='no') ', natorb=False'
+  if(hardwfn) write(fid2,'(A)',advance='no') ', HardWFN=True'
+  if(crazywfn) write(fid2,'(A)',advance='no') ', CrazyWFN=True'
+  write(fid2,'(A)') ')'
+  if(iroot > 0) then
+   write(fid2,'(A)') 'ci0 = mc.ci'
+   write(fid2,'(3(A,I0),A)',advance='no')'mc = casci_wrapper(mf,', nacto, ',(',&
+                                         nacta, ',', nactb, ')'
+   write(fid2,'(A)',advance='no') ', natorb=False'
+   if(hardwfn) write(fid2,'(A)',advance='no') ', HardWFN=True'
+   if(crazywfn) write(fid2,'(A)',advance='no') ', CrazyWFN=True'
+   write(fid2,'(A)') ', ci0=ci0)'
+  end if
+  if(FIC) then ! PC-/FIC-NEVPT2
+   write(fid2,'(A)') 'WickICNEVPT2(mc).kernel()'
+  else         ! SC-NEVPT2
+   write(fid2,'(A)') 'mrpt.NEVPT(mc).kernel()'
+  end if
  end if
 
  close(fid2)
  i = RENAME(TRIM(pyname1), TRIM(pyname))
 end subroutine prt_nevpt2_script_into_py
 
-! print PySCF DMRG-NEVPT2 settings
-subroutine prt_dmrg_nevpt2_setting(fid)
- use mr_keyword, only: mem, nproc, maxM, iroot, target_root, nstate
+! print PySCF+Block2 DMRG-SC/PC-NEVPT2 settings
+subroutine prt_dmrg_nevpt2_setting(fid, iroot, nstate, maxM, FIC)
+ use mr_keyword, only: mem, nproc
  use mol, only: nif, nacto
  implicit none
  integer :: i, real_nproc, nthread
- integer, intent(in) :: fid
+ integer, intent(in) :: fid, iroot, nstate, maxM
+ logical, intent(in) :: FIC ! FIC-NEVPT2 is just PC-NEVPT2
 
- ! The number of MPI processors should be less than or equal to ndb+nvir. This
- ! is required by dmrgscf/pyscf/dmrgscf/nevpt_mpi.py.
- real_nproc = MIN(nif-nacto, nproc)
+ if(FIC) then ! DMRG-PC-NEVPT2
+  if(nstate > 0) then ! for each root
+   write(fid,'(A,I0)') 'nstate = ', nstate
+   write(fid,'(A)') 'for i in range(nstate+1):'
+   write(fid,'(4X,A)') 'WickICNEVPT2(mc,root=i).kernel()'
+  else                ! for one specific root
+   write(fid,'(A)') 'nroot = mc.fcisolver.nroots'
+   write(fid,'(A)') 'if nroot == 1:'
+   write(fid,'(4X,A)') 'WickICNEVPT2(mc).kernel()'
+   write(fid,'(A)') 'else:'
+   write(fid,'(4X,A,I0,A)') 'WickICNEVPT2(mc,root=',iroot,').kernel()'
+  end if
+ else         ! DMRG-SC-NEVPT2
+  ! The number of MPI processors should be less than or equal to ndb+nvir. This
+  ! is required by dmrgscf/pyscf/dmrgscf/nevpt_mpi.py.
+  real_nproc = MIN(nif-nacto, nproc)
 
- ! MPI/OpenMP hybrid can be used if the number of MPI processors is small
- nthread = 1
- if(real_nproc < nproc) nthread = nproc/real_nproc
+  ! MPI/OpenMP hybrid can be used if the number of MPI processors is small
+  nthread = 1
+  if(real_nproc < nproc) nthread = nproc/real_nproc
 
- ! In the NEVPT2 step, always use MPI or MPI/OpenMP hybrid parallelism since
- ! they are faster than pure OpenMP.
- write(fid,'(/,A,I0,A)') "dmrgscf.settings.MPIPREFIX = 'mpirun -n ",real_nproc,&
-                         "'"
- write(fid,'(A)') 'lib.num_threads(1)'
- i = CEILING(0.5d0*DBLE(mem)/DBLE(real_nproc))
- write(fid,'(A,I0,A)') 'mc.max_memory = ', (mem-real_nproc*i)*1000, ' # MB'
- write(fid,'(A,I0)') 'mc.fcisolver.threads = ', nthread
- write(fid,'(A,I0,A)') 'mc.fcisolver.memory = ', i, ' # GB'
- write(fid,'(A,I0,A)') "mc.fcisolver.mpiprefix = 'mpirun -n ", real_nproc, &
-                       " --bind-to none'"
-
- if(nstate > 0) then ! SS-DMRG-NEVPT2 for each root
-  write(fid,'(A,I0)') 'nstate = ', nstate
-  write(fid,'(A)') 'for i in range(nstate+1):'
-  write(fid,'(A,I0,A)') '  mrpt.NEVPT(mc,root=i).compress_approx(maxM=', maxM, &
-                        ').kernel()'
- else                ! SS-DMRG-NEVPT2 for one specific root
-  write(fid,'(A)',advance='no') 'mrpt.NEVPT(mc'
-  if(iroot > 0) write(fid,'(A,I0)',advance='no') ', root=', target_root
-  write(fid,'(A,I0,A)') ').compress_approx(maxM=', maxM, ').kernel()'
+  ! In the SC-NEVPT2 step, always use MPI or MPI/OpenMP hybrid parallelism since
+  ! they are faster than pure OpenMP.
+  write(fid,'(/,A,I0,A)') "dmrgscf.settings.MPIPREFIX = 'mpirun -n ",real_nproc,&
+                          "'"
+  write(fid,'(A)') 'lib.num_threads(1)'
+  i = CEILING(0.5d0*DBLE(mem)/DBLE(real_nproc))
+  write(fid,'(A,I0,A)') 'mc.max_memory = ', (mem-real_nproc*i)*1000, ' # MB'
+  write(fid,'(A,I0)') 'mc.fcisolver.threads = ', nthread
+  write(fid,'(A,I0,A)') 'mc.fcisolver.memory = ', i, ' # GB'
+  write(fid,'(A,I0,A)') "mc.fcisolver.mpiprefix = 'mpirun -n ", real_nproc, &
+                        " --bind-to none'"
+  if(nstate > 0) then ! for each root
+   write(fid,'(A,I0)') 'nstate = ', nstate
+   write(fid,'(A)') 'for i in range(nstate+1):'
+   write(fid,'(A,I0,A)') '  mrpt.NEVPT(mc,root=i).compress_approx(maxM=', maxM, &
+                         ').kernel()'
+  else                ! for one specific root
+   write(fid,'(A)') 'nroot = mc.fcisolver.nroots'
+   write(fid,'(A)') 'if nroot == 1:'
+   write(fid,'(4X,A,I0,A)') 'mrpt.NEVPT(mc).compress_approx(maxM=', maxM, &
+                            ').kernel()'
+   write(fid,'(A)') 'else:'
+   write(fid,'(4X,2(A,I0),A)') 'mrpt.NEVPT(mc,root=', iroot, &
+                               ').compress_approx(maxM=', maxM, ').kernel()'
+  end if
  end if
 end subroutine prt_dmrg_nevpt2_setting
 

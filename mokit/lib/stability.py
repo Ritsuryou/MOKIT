@@ -16,16 +16,14 @@
 # If any PySCF developers think this action is inappropriate, please contact
 # MOKIT developers to delete this file.
 
-from pyscf import lib
+from pyscf import scf, lib
 from pyscf.soscf import newton_ah
 import numpy as np
 
-MAX_CYCLE = 200
-
+MAX_CYCLE = 300
 
 def _rotate_mo(mo_coeff, mo_occ, dx):
-    from pyscf.scf import hf
-    dr = hf.unpack_uniq_var(dx, mo_occ)
+    dr = scf.hf.unpack_uniq_var(dx, mo_occ)
     u = newton_ah.expmat(dr)
     return np.dot(mo_coeff, u)
 
@@ -96,8 +94,46 @@ def uhf_internal(mf, tol=1e-7, verbose=None):
     return mo, stable
 
 
+def loop_soscf(mf):
+    from mokit.lib.rwwfn import get_occ_from_na_nb, get_occ_from_na_nb2
+    na, nb = mf.mol.nelec
+    uhf = isinstance(mf, scf.uhf.UHF)
+    if uhf:
+        nif = mf.mo_coeff[0].shape[1]
+    else:
+        nif = mf.mo_coeff.shape[1]
+    old_cyc = mf.max_cycle
+    mf.max_cycle = 64
+
+    def is_descending_np(arr):
+        return np.all(arr[:-1] >= arr[1:])
+
+    for i in range(10):
+        run_kernel = not mf.converged
+        if mf.converged and not is_descending_np(mf.mo_occ):
+            if uhf:
+                occ = get_occ_from_na_nb2(nif, na, nb)
+            else:
+                occ = get_occ_from_na_nb(nif, na, nb)
+            mf.mo_occ = occ.copy()
+            run_kernel = True
+        if run_kernel:
+            if not isinstance(mf, newton_ah._CIAH_SOSCF):
+                mf = mf.newton()
+            mf.kernel()
+        else:
+            break
+    else:
+        raise OSError('PySCF SOSCF failed after 10 attempts.')
+    mf.max_cycle = old_cyc
+    return mf
+
+
 def hf_stable_opt_internal(mf):
-    from pyscf import scf
+    # in case that the input object `mf` is unconverged, let's check it first
+    if not mf.converged:
+        mf = loop_soscf(mf)
+
     rhf = isinstance(mf, scf.rhf.RHF) or isinstance(mf, scf.rohf.ROHF)
     uhf = isinstance(mf, scf.uhf.UHF)
 
@@ -114,9 +150,9 @@ def hf_stable_opt_internal(mf):
         if (stable):
             break
         else:
-            dm = mf.make_rdm1(mo, mf.mo_occ)
-            mf = mf.newton()
-            mf.kernel(dm0=dm)
+            mf.converged = False
+            mf.mo_coeff = mo
+            mf = loop_soscf(mf)
     if not stable:
         raise OSError('PySCF R(O)HF stable=opt failed after 10 attempts.')
     return mf

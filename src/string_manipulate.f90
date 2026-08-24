@@ -13,8 +13,8 @@ end module phys_cons
 
 module mokit_version_info
  implicit none
- character(len=9), parameter :: version = '1.2.8    '
- character(len=11), parameter :: date = '2026-Aug-18'
+ character(len=9), parameter :: version = '1.2.9rc1 '
+ character(len=11), parameter :: date = '2026-Aug-23'
 end module mokit_version_info
 
 ! transform a string into upper case
@@ -1806,18 +1806,19 @@ subroutine prt_hard_or_crazy_casci_pyscf(nx, fid, nopen, hardwfn, crazywfn)
   buf2 = '(A,F8.3,A)'
  end if
 
- if(hardwfn) then
-  write(unit=fid,fmt=TRIM(buf1)) 'mc.fcisolver.pspace_size = 1200'
-  write(unit=fid,fmt=TRIM(buf1)) 'mc.fcisolver.max_cycle = 400'
- else if(crazywfn) then
+ if(crazywfn) then
   write(unit=fid,fmt=TRIM(buf1)) 'mc.fcisolver.level_shift = 0.2'
-  write(unit=fid,fmt=TRIM(buf1)) 'mc.fcisolver.pspace_size = 2400'
+  write(unit=fid,fmt=TRIM(buf1)) 'mc.fcisolver.pspace_size = 2800'
   write(unit=fid,fmt=TRIM(buf1)) 'mc.fcisolver.max_space = 100'
-  write(unit=fid,fmt=TRIM(buf1)) 'mc.fcisolver.max_cycle = 600'
+  write(unit=fid,fmt=TRIM(buf1)) 'mc.fcisolver.max_cycle = 800'
   ss = DBLE(nopen)*0.5d0
   ss = ss*(ss+1d0)
   write(unit=fid,fmt=TRIM(buf2)) 'mc.fix_spin_(ss=',ss,')'
+ else if(hardwfn) then
+  write(unit=fid,fmt=TRIM(buf1)) 'mc.fcisolver.pspace_size = 1400'
+  write(unit=fid,fmt=TRIM(buf1)) 'mc.fcisolver.max_cycle = 400'
  else
+  write(unit=fid,fmt=TRIM(buf1)) 'mc.fcisolver.pspace_size = 500'
   write(unit=fid,fmt=TRIM(buf1)) 'mc.fcisolver.max_cycle = 200'
  end if
 end subroutine prt_hard_or_crazy_casci_pyscf
@@ -1876,10 +1877,13 @@ subroutine prt_csf_casci_kywrd_py(fid, mem, mult, iroot, nstate, reset_mo, hardw
  write(fid,'(4X,A,I0,A)') 'mc.fcisolver.max_memory = ', mem*300, ' # MB'
  write(fid,'(4X,A)') 'mc.fcisolver.conv_tol = 1e-8'
  if(crazywfn) then
-  write(fid,'(4X,A)') 'mc.fcisolver.max_cycle = 600'
+  write(fid,'(4X,A)') 'mc.fcisolver.pspace_size = 2000'
+  write(fid,'(4X,A)') 'mc.fcisolver.max_cycle = 800'
  else if(hardwfn) then
+  write(fid,'(4X,A)') 'mc.fcisolver.pspace_size = 1000'
   write(fid,'(4X,A)') 'mc.fcisolver.max_cycle = 400'
  else
+  write(fid,'(4X,A)') 'mc.fcisolver.pspace_size = 400'
   write(fid,'(4X,A)') 'mc.fcisolver.max_cycle = 200'
  end if
  !write(fid,'(4X,A)') 'mc.fcisolver.lindep = 1e-12'

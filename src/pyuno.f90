@@ -7,16 +7,25 @@
 ! updated by jxzou at 20210518: add an intent(in) parameter ON_thres
 ! updated by jxzou at 20220711: change ON_thres to uno_thres
 
-subroutine svd_and_rotate(nbf, na, nb, ab_ovlp, mo_a, mo_b, sv, reverse)
+subroutine svd_and_rotate(nbf, na, nb, reverse, ab_ovlp, mo_a, mo_b, sv)
  implicit none
  integer :: i
  integer, intent(in) :: nbf, na, nb
+!f2py intent(in) :: nbf, na, nb
  real(kind=8), intent(in) :: ab_ovlp(na,nb)
+!f2py intent(in) :: ab_ovlp
+!f2py depend(na,nb) :: ab_ovlp
  real(kind=8), intent(inout) :: mo_a(nbf,na), mo_b(nbf,nb)
+!f2py intent(in,out) :: mo_a, mo_b
+!f2py depend(nbf,na) :: mo_a
+!f2py depend(nbf,nb) :: mo_b
  real(kind=8), intent(out) :: sv(na)
+!f2py intent(out) :: sv
+!f2py depend(na) :: sv
  real(kind=8), allocatable :: u(:,:), vt(:,:), u2(:,:), vt2(:,:),  new_mo(:,:),&
   sv2(:)
  logical, intent(in) :: reverse
+!f2py intent(in) :: reverse
 
  ! perform SVD on alpha_beta_ovlp of occupied or virtual orbitals
  allocate(u(na,na), vt(nb,nb))
@@ -155,10 +164,10 @@ subroutine uno(outname, nbf, nif, na, nb, mo_a, mo_b, ao_ovlp, uno_thres, idx, n
 
  ! do SVD on the alpha_beta_ovlp of occupied spatial orbitals
  allocate(sv_occ(na))
- call svd_and_rotate(nbf, na, nb, mo_ovlp, occ_a, occ_b, sv_occ, .false.)
+ call svd_and_rotate(nbf, na, nb, .false., mo_ovlp, occ_a, occ_b, sv_occ)
  deallocate(mo_ovlp)
  !write(6,'(/,A)') 'Singular values from SVD of Alpha/Beta MOs:'
- !write(6,'(5(1X,ES15.8))') (sv_occ(i), i=1,na)
+ !write(6,'(5(1X,ES15.8))') sv_occ
  ! SVD done in occ space
 
  allocate(sv_occ0(na), source=sv_occ)
@@ -177,22 +186,26 @@ subroutine uno(outname, nbf, nif, na, nb, mo_a, mo_b, ao_ovlp, uno_thres, idx, n
  forall(i = 1:nact0) noon(na+i) = 2d0 - noon(nb-i+1)
  deallocate(sv_occ)
 
- ! copy the doubly occupied MOs
- uno_coeff(:,1:ndb) = occ_a(:,1:ndb)
+ ! We hope the doubly occupied MOs uno_coeff(:,1:ndb) resemble the RHF-like
+ ! doubly occupied MOs mo_a(:,1:ndb) both in MO order and shape. So a simple
+ ! copy usually does not work, we use SVD to find the resembled MOs.
+ !uno_coeff(:,1:ndb) = occ_a(:,1:ndb)
+ call orb_resemble_ref1(nbf, ndb, occ_a(:,1:ndb), nbf, ndb, mo_a(:,1:ndb), &
+                        ao_ovlp, uno_coeff(:,1:ndb))
 
  ! copy the singly occupied MO
  if(nopen > 0) uno_coeff(:,nb+1:na) = occ_a(:,nb+1:na)
 
  ! transform the corresponding orbitals to UNOs in occ space
  allocate(idx1(nact0), idx2(nact0))
- forall(i = 1:nact0)
+ do i = 1, nact0, 1
   idx1(i) = ndb + i
   idx2(i) = nocc + 1 - i
- end forall
- forall(i = 1:nact0)
+ end do ! for i
+ do i = 1, nact0, 1
   uno_coeff(:,idx1(i)) = (occ_a(:,idx1(i)) + occ_b(:,idx1(i)))/DSQRT(2d0*noon(idx1(i)))
   uno_coeff(:,idx2(i)) = (occ_a(:,idx1(i)) - occ_b(:,idx1(i)))/DSQRT(2d0*noon(idx2(i)))
- end forall
+ end do ! for i
  deallocate(idx1, idx2, occ_a, occ_b)
  ! done transform in occ space
 
@@ -291,7 +304,7 @@ subroutine swap_pair_in_uno(na, nb, nbf, nif, swap, ao_ovlp, mo_a0, mo_b0, &
  call calc_CTSCp2(nbf, na, nb, occ_a, ao_ovlp, occ_b, mo_ovlp)
 
  allocate(sv_occ(na))
- call svd_and_rotate(nbf, na, nb, mo_ovlp, occ_a, occ_b, sv_occ, .false.)
+ call svd_and_rotate(nbf, na, nb, .false., mo_ovlp, occ_a, occ_b, sv_occ)
  deallocate(mo_ovlp)
  mo_a(:,1:na) = occ_a
  mo_b(:,1:nb) = occ_b
@@ -353,7 +366,7 @@ subroutine enlarge_as_by_svd(idx, nbf, nif, mo1, mo2, ao_ovlp, new_mo)
  allocate(mo_ovlp(ndb1,nact2))
  call calc_CTSCp2(nbf, ndb1, nact2, mo3, ao_ovlp, mo4, mo_ovlp)
  allocate(sv(ndb1))
- call svd_and_rotate(nbf, ndb1, nact2, mo_ovlp, mo3, mo4, sv, .true.)
+ call svd_and_rotate(nbf, ndb1, nact2, .true., mo_ovlp, mo3, mo4, sv)
  deallocate(mo_ovlp)
  write(6,'(A)') 'Singular values of docc1 v.s. act2:'
  write(6,'(5(1X,ES15.8))') sv
@@ -367,7 +380,7 @@ subroutine enlarge_as_by_svd(idx, nbf, nif, mo1, mo2, ao_ovlp, new_mo)
  allocate(mo_ovlp(nvir1,nact2))
  call calc_CTSCp2(nbf, nvir1, nact2, mo3, ao_ovlp, mo4, mo_ovlp)
  allocate(sv(nvir1))
- call svd_and_rotate(nbf, nvir1, nact2, mo_ovlp, mo3, mo4, sv, .false.)
+ call svd_and_rotate(nbf, nvir1, nact2, .false., mo_ovlp, mo3, mo4, sv)
  write(6,'(/,A)') 'Singular values of vir1 v.s. act2:'
  write(6,'(5(1X,ES15.8))') sv
  deallocate(mo4, mo_ovlp)
@@ -379,7 +392,8 @@ end subroutine enlarge_as_by_svd
 
 ! calculated the SVD singular values of overlap of two sets of MOs
 ! Note: the input coeff1 and coeff2 must have the same dimension (nbf,nif)
-subroutine svd_of_two_mo(nbf, nif, ao_ovlp, old_mo1, old_mo2, new_mo1, new_mo2)
+subroutine svd_of_two_set_mo(nbf, nif, prt, ao_ovlp, old_mo1, old_mo2, new_mo1,&
+                             new_mo2)
  implicit none
  integer :: i
  integer, intent(in) :: nbf, nif
@@ -392,24 +406,28 @@ subroutine svd_of_two_mo(nbf, nif, ao_ovlp, old_mo1, old_mo2, new_mo1, new_mo2)
 !f2py intent(out) :: new_mo1, new_mo2
 !f2py depend(nbf,nif) :: new_mo1, new_mo2
  real(kind=8), allocatable :: mo_ovlp(:,:), ev(:)
+ logical, intent(in) :: prt
 
  allocate(mo_ovlp(nif,nif))
  call calc_CTSCp(nbf, nif, old_mo1, ao_ovlp, old_mo2, mo_ovlp)
  allocate(ev(nif))
  new_mo1 = old_mo1
  new_mo2 = old_mo2
- call svd_and_rotate(nbf, nif, nif, mo_ovlp, new_mo1, new_mo2, ev, .False.)
+ call svd_and_rotate(nbf, nif, nif, .false., mo_ovlp, new_mo1, new_mo2, ev)
  deallocate(mo_ovlp)
 
- write(6,'(/,A)') 'SVD analysis of two sets of MOs:'
- write(6,'(A,ES15.8)') 'The smallest singular value:', MINVAL(ev)
- i = COUNT(ev < 1d-1)
- write(6,'(A,I0)') 'Number of singular values< 0.1: ', i
- i = COUNT(ev < 1d-2)
- write(6,'(A,I0)') 'Number of singular values<0.01: ', i
+ if(prt) then
+  write(6,'(/,A)') 'SVD analysis of two sets of MOs:'
+  write(6,'(A,ES15.8)') 'The smallest singular value:', MINVAL(ev)
+  i = COUNT(ev < 1d-1)
+  write(6,'(A,I0)') 'Number of singular values< 0.1: ', i
+  i = COUNT(ev < 1d-2)
+  write(6,'(A,I0)') 'Number of singular values<0.01: ', i
 
- write(6,'(A)') 'All singular values:'
- write(6,'(5(1X,ES15.8))') (ev(i),i=1,nif)
+  write(6,'(A)') 'All singular values:'
+  write(6,'(5(1X,ES15.8))') (ev(i),i=1,nif)
+ end if
+
  deallocate(ev)
-end subroutine svd_of_two_mo
+end subroutine svd_of_two_set_mo
 

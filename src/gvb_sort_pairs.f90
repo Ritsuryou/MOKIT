@@ -7,27 +7,18 @@ program main
  implicit none
  integer :: i, nbf, nif, nocc, nopen, npair
  character(len=10) :: buf
+ character(len=33), parameter :: error_warn='ERROR in program gvb_sort_pairs: '
  character(len=240) :: datname
-
- nocc = 0; nopen = 0; npair = 0; buf = ' '; datname = ' '
- write(6,'(/,A)') REPEAT('-',79)
- write(6,'(A)') 'Warning: since MOKIT 1.2.7rc13, gvb_sort_pairs does not requir&
-                &e the user to'
- write(6,'(A)') 'provide nbf and nif. For experienced users who directly use th&
-                &e utility'
- write(6,'(A)') 'gvb_sort_pairs, please update your usage. For common users who&
-                & does not use it'
- write(6,'(A)') 'directly, please ignore this warning.'
- write(6,'(A)') REPEAT('-',79)
 
  i = iargc()
  if(i /= 4) then
-  write(6,'(/,A)') 'ERROR in subroutine gvb_sort_pairs: wrong command line arguments!'
+  write(6,'(/,A)') error_warn//'wrong command line arguments!'
   write(6,'(A)')   'Syntax : gvb_sort_pairs a.dat nocc nopen npair'
   write(6,'(A,/)') 'Example: gvb_sort_pairs a.dat 40 1 71'
   stop
  end if
 
+ nocc = 0; nopen = 0; npair = 0; buf = ' '; datname = ' '
  call getarg(1, datname)
  call require_file_exist(datname)
  call getarg(2, buf)
@@ -38,8 +29,7 @@ program main
  read(buf,*) npair
 
  if(npair < 0) then
-  write(6,'(/,A)') 'ERROR in subroutine gvb_sort_pairs: npair<0. Not allowed!'
-  write(6,'(A,I0)') 'npair=', npair
+  write(6,'(/,A,I0)') error_warn//'nonsense npair=', npair
   stop
  end if
 
@@ -56,6 +46,7 @@ subroutine gvb_sort_pairs(datname, nbf, nif, nocc, nopen, npair)
  real(kind=8), allocatable :: tmp_coeff1(:), tmp_coeff2(:)
  character(len=5) :: str1
  character(len=30) :: str2
+ character(len=36), parameter::error_warn='ERROR in subroutine gvb_sort_pairs: '
  character(len=240) :: buf, fname
  character(len=240), intent(in) :: datname
 
@@ -67,7 +58,7 @@ subroutine gvb_sort_pairs(datname, nbf, nif, nocc, nopen, npair)
  fname = datname(1:i-1)//'_s.dat'
 
  if(nocc+nopen+2*npair > nif) then
-  write(6,'(/,A)') 'ERROR in subroutine gvb_sort_pairs: (nocc+nopen+2*npair)>nif!'
+  write(6,'(/,A)') error_warn//'(nocc+nopen+2*npair) > nif!'
   write(6,'(A,4I5)') 'nocc, nopen, npair, nif=', nocc, nopen, npair, nif
   stop
  end if
@@ -87,7 +78,7 @@ subroutine gvb_sort_pairs(datname, nbf, nif, nocc, nopen, npair)
   if(INDEX(buf,'CICOEF(') > 0) exit
  end do
  if(i /= 0) then
-  write(6,'(/,A)') "ERROR in subroutine gvb_sort_pairs: no 'CICOEF(' found!"
+  write(6,'(/,A)') error_warn//'no "CICOEF(" found!'
   write(6,'(A)') 'File '//TRIM(datname)//' is problematic!'
   close(datid)
   stop
@@ -112,8 +103,7 @@ subroutine gvb_sort_pairs(datname, nbf, nif, nocc, nopen, npair)
   if(buf(2:5) == '$VEC') exit
  end do
  if(i /= 0) then
-  write(6,'(/,A)') "ERROR in subroutine gvb_sort_pairs: no '$VEC' found in file "&
-                   //TRIM(datname)
+  write(6,'(/,A)') error_warn//'`$VEC` not found in '//TRIM(datname)
   close(datid)
   stop
  end if

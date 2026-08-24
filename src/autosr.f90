@@ -3,7 +3,7 @@
 ! keywords information of single reference calculations (default values are set)
 module sr_keyword
  use mr_keyword, only: gjfname, mem, nproc, method, basis, bgchg, cart, force, &
-  DKH2, X2C, dkh2_or_x2c, RI, F12, DLPNO, RIJK_bas, RIC_bas, F12_cabs, localm, &
+  DKH2, X2C, dkh2_or_x2c, RI, F12, dlpno, RIJK_bas, RIC_bas, F12_cabs, localm, &
   nstate, readrhf, readuhf, hardwfn, given_xmult, xmult, crazywfn, mo_rhf, &
   hf_prog, hfonly, hf_fch, skiphf, chgname, gau_path, molcas_path, orca_path, &
   psi4_path, dalton_path, check_gms_path, gms_path, gms_scr_path, gms_dat_path,&
@@ -171,13 +171,13 @@ subroutine parse_sr_keyword()
  case('ccsd(t)-f12','ccsd(t)-f12a','ccsd(t)-f12b')
   ccsd_t = .true.; F12 = .true.
  case('dlpno-mp2')
-  mp2 = .true.; DLPNO = .true.
+  mp2 = .true.; dlpno = .true.
  case('dlpno-ccsd')
-  ccsd = .true.; DLPNO = .true.
+  ccsd = .true.; dlpno = .true.
  case('dlpno-ccsd(t)','dlpno-ccsd(t0)')
-  ccsd_t = .true.; DLPNO = .true.
+  ccsd_t = .true.; dlpno = .true.
  case('dlpno-ccsd(t1)')
-  ccsd_t = .true.; DLPNO = .true.; iterative_t = .true.
+  ccsd_t = .true.; dlpno = .true.; iterative_t = .true.
  case('ccsdt') ! full triples
   ccsdt = .true.
  case('qcisd') ! QCISD
@@ -368,16 +368,14 @@ subroutine parse_sr_keyword()
   case('f12_cabs')
    read(longbuf(j+1:i-1),*) F12_cabs
   case('dlpno')
-   DLPNO = .true.; RI = .true.
+   dlpno = .true.; RI = .true.
   case('hfonly')
    HFonly = .true.
   case('no')
    gen_no = .true.
   case('relaxed_dm')
-   relaxed_dm = .true.
-   write(6,'(/,A)') 'Warning: the keyword Relaxed_DM will be deprecated in the &
-                    &near future.'
-   write(6,'(A)') 'Please use RelaxedDM instead.'
+   write(6,'(/,A)') error_warn//'`Relaxed_DM` is deprecated. Please use `Relaxe&
+                   &dDM`'
   case('relaxeddm')
    relaxed_dm = .true.
   case default
@@ -406,13 +404,30 @@ subroutine check_sr_kywd_compatible()
                                               &d_compatible: '
  cc_enabled = (ccd .or. ccsd .or. ccsd_t .or. ccsdt .or. qcisd .or. qcisd_t)
 
- if(cc_enabled .and. DLPNO .and. TRIM(cc_prog)/='orca') then
-  write(6,'(/,A)') REPEAT('-',79)
-  write(6,'(A)') 'Warning from subroutine check_sr_kywd_compatible: a DLPNO-CC &
-                 &job is requested.'
-  write(6,'(A)') 'CC_prog is automatically switched to ORCA.'
-  write(6,'(A)') REPEAT('-',79)
-  cc_prog = 'orca'
+ if(dlpno) then
+  if(cc_enabled) then
+   select case(TRIM(cc_prog))
+   case('orca','psi4')
+   case default
+    write(6,'(/,A)') error_warn//'DLPNO-CC calculation is requested.'
+    write(6,'(A)') 'Only CC_prog=ORCA/PSI4 is accepted. But got '//TRIM(cc_prog)
+    stop
+   end select
+  end if
+  if(mp2) then
+   select case(TRIM(mp2_prog))
+   case('orca','psi4')
+   case default
+    write(6,'(/,A)') error_warn//'DLPNO-MP2 calculation is requested.'
+    write(6,'(A)') 'Only CC_prog=ORCA/PSI4 is accepted. But got '//TRIM(cc_prog)
+    stop
+   end select
+  end if
+  if(.not. RI) then
+   write(6,'(/,A)') error_warn//'DLPNO calculation must be combined'
+   write(6,'(A)') 'with RI. But got RI = .false.'
+   stop
+  end if
  end if
 
  if(TRIM(method)=='ccsd(t)-f12a' .or. TRIM(method)=='ccsd(t)-f12b') cc_prog='molpro'
@@ -605,7 +620,7 @@ end subroutine check_sr_kywd_compatible
 subroutine prt_sr_strategy()
  implicit none
 
- if(DLPNO .and. ccsd_t .and. (.not.iterative_t)) then
+ if(dlpno .and. ccsd_t .and. (.not.iterative_t)) then
   write(6,'(/,A)') REPEAT('-',79)
   write(6,'(A)') 'Remark: DLPNO-CCSD(T) is DLPNO-CCSD(T0) by default in ORCA. I&
                  &f you want higher'
@@ -625,7 +640,7 @@ subroutine prt_sr_strategy()
  write(6,'(5(A,L1,3X))') 'MP2     = ',  mp2, 'QCISD   = ',qcisd, &
    'QCISD(T)= ',qcisd_t, 'CCD     = ',  ccd, 'CCSD    = ', ccsd, &
    'CCSD(T) = ', ccsd_t, 'CCSDT   = ',ccsdt, 'EOM     = ',  eom, &
-   'RI      = ',     RI, 'F12     = ',  F12, 'DLPNO   = ',DLPNO, &
+   'RI      = ',     RI, 'F12     = ',  F12, 'DLPNO   = ',dlpno, &
    'IP      = ',     ip, 'EA      = ',   ea, '(T1)    = ',iterative_t
  write(6,'(A)') 'RIJK_bas='//TRIM(RIJK_bas)//'  RIC_bas='//TRIM(RIC_bas)//&
                 ' F12_cabs='//TRIM(F12_cabs)
@@ -878,6 +893,7 @@ subroutine do_mp2()
    call xml2fch_wrap(mklname, no_fch, .true.)
   end if
  case('psi4')
+  call check_exe_exist(psi4_path)
   inpname = hf_fch(1:i-1)//'_MP2.inp'
   old_inp = hf_fch(1:i-1)//'_MP2.log'
   call fch2psi_wrap(hf_fch, inpname)
@@ -1548,7 +1564,7 @@ end subroutine prt_posthf_gau_inp
 
 ! add CC keywords into a ORCA input file
 subroutine prt_posthf_orca_inp(inpname, excited)
- use sr_keyword, only: mem, nproc, DKH2, X2C, RI, DLPNO, F12, RIJK_bas, RIC_bas,&
+ use sr_keyword, only: mem, nproc, DKH2, X2C, RI, dlpno, F12, RIJK_bas, RIC_bas,&
   F12_cabs, mo_rhf, lin_dep, mp2, qcisd, qcisd_t, ccd, ccsd, ccsd_t, iterative_t,&
   ccsdt, gen_no, relaxed_dm, ip, ea, nstate, chem_core, force
  use mol, only: mult
@@ -1618,7 +1634,7 @@ subroutine prt_posthf_orca_inp(inpname, excited)
  if(F12) write(fid1,'(A)',advance='no') ' '//TRIM(F12_cabs)
  if(force) write(fid1,'(A)',advance='no') ' EnGrad'
 
- if(DLPNO) then
+ if(dlpno) then
   write(fid1,'(A)',advance='no') ' TightPNO DLPNO-'
   if(iterative_t) then
    write(fid1,'(A)',advance='no') 'CCSD(T1)'
@@ -1663,7 +1679,7 @@ subroutine prt_posthf_orca_inp(inpname, excited)
  end if
 
  if(F12) then
-  if(DLPNO) then
+  if(dlpno) then
    write(fid1,'(A)') '-F12'
   else
    write(fid1,'(A)') '-F12/RI'
@@ -2143,9 +2159,9 @@ subroutine prt_posthf_pyscf_inp(pyname, excited)
 end subroutine prt_posthf_pyscf_inp
 
 subroutine prt_posthf_psi4_inp(inpname, excited)
- use sr_keyword, only: mem, mp2, ccd, ccsd, ccsd_t, cc_enabled, adc_n, chem_core,&
-  RI, RIJK_bas, RIC_bas, gen_no, relaxed_dm, force, no_fch, nstate, given_xmult, &
-  xmult
+ use sr_keyword, only: mem, dlpno, mp2, ccd, ccsd, iterative_t, ccsd_t, &
+  cc_enabled, adc_n, chem_core, RI, RIJK_bas, RIC_bas, gen_no, relaxed_dm, &
+  force, no_fch, nstate, given_xmult, xmult
  implicit none
  integer :: i, fid, fid1, RENAME
  character(len=10) :: psi4_ver
@@ -2160,7 +2176,6 @@ subroutine prt_posthf_psi4_inp(inpname, excited)
 
  call find_specified_suffix(inpname, '.inp', i)
  inpname1 = inpname(1:i-1)//'.t'
-
  open(newunit=fid,file=TRIM(inpname),status='old',position='rewind')
  open(newunit=fid1,file=TRIM(inpname1),status='replace')
 
@@ -2216,6 +2231,7 @@ subroutine prt_posthf_psi4_inp(inpname, excited)
  end if
 
  if(x_triplet) write(fid1,'(A)') 'set kind triplet'
+ if(dlpno) write(fid1,'(A)') 'set pno_convergence tight'
 
  if(force) then
   ! PSI4 >=1.8, extra keywords are needed to calculate CCSD(T) analytical gradients
@@ -2238,7 +2254,7 @@ subroutine prt_posthf_psi4_inp(inpname, excited)
   end if
  end if
 
- if(excited) then
+ if(excited) then ! excited state
   if(adc_n == 2) then
    write(fid1,'(A)',advance='no') "adc(2)'"
   else if(adc_n == 3) then
@@ -2247,15 +2263,27 @@ subroutine prt_posthf_psi4_inp(inpname, excited)
    write(fid1,'(A)',advance='no') "eom-ccsd'"
   end if
   write(fid1,'(A)') ", properties=['oscillator_strength'])"
- else
-  if(mp2) then
-   write(fid1,'(A)',advance='no') "mp2'"
-  else if(ccd) then
-   write(fid1,'(A)',advance='no') "ccd'"
-  else if(ccsd) then
-   write(fid1,'(A)',advance='no') "ccsd'"
-  else if(ccsd_t) then
-   write(fid1,'(A)',advance='no') "ccsd(t)'"
+ else             ! ground state
+  if(dlpno) then
+   if(iterative_t) then
+    write(fid1,'(A)',advance='no') "dlpno-ccsd(t)'"
+   else if(ccsd_t) then
+    write(fid1,'(A)',advance='no') "dlpno-ccsd(t0)'"
+   else if(ccsd) then
+    write(fid1,'(A)',advance='no') "dlpno-ccsd'"
+   else if(mp2) then
+    write(fid1,'(A)',advance='no') "dlpno-mp2'"
+   end if
+  else
+   if(ccsd_t) then
+    write(fid1,'(A)',advance='no') "ccsd(t)'"
+   else if(ccsd) then
+    write(fid1,'(A)',advance='no') "ccsd'"
+   else if(ccd) then
+    write(fid1,'(A)',advance='no') "ccd'"
+   else if(mp2) then
+    write(fid1,'(A)',advance='no') "mp2'"
+   end if
   end if
   if(gen_no) write(fid1,'(A)',advance='no') ', return_wfn=True'
   write(fid1,'(A)') ')'
@@ -2997,59 +3025,67 @@ subroutine read_mp2_e_from_gms_out(outname, ref_e, tot_e)
  read(buf(i+7:),*) tot_e
 end subroutine read_mp2_e_from_gms_out
 
+! read (DLPNO-)MP2 electronic enrgy from a specified PSI4 output file
 subroutine read_mp2_e_from_psi4_out(outname, ref_e, mp2_e)
  implicit none
- integer :: i, fid
+ integer :: fid
  real(kind=8), intent(out) :: ref_e, mp2_e
  character(len=240) :: buf
  character(len=240), intent(in) :: outname
- logical :: ri
+ logical :: ri, dlpno
 
- ri = .false.
+ ri = .false.; dlpno = .false.
  open(newunit=fid,file=TRIM(outname),status='old',position='append')
 
  do while(.true.)
-  BACKSPACE(fid,iostat=i)
-  if(i /= 0) exit
-  BACKSPACE(fid,iostat=i)
-  if(i /= 0) exit
+  BACKSPACE(fid)
+  BACKSPACE(fid)
   read(fid,'(A)') buf
-  if(INDEX(buf,'REF Energy') > 0) exit
+  if(buf(11:23) == 'Psi4: An Open') then
+   close(fid)
+   write(6,'(/,A)') 'ERROR in subroutine read_mp2_e_from_psi4_out: SCF energy n&
+                    &ot found in file'
+   write(6,'(A)') TRIM(outname)
+   stop
+  end if
+  if(INDEX(buf,'REF Energy') > 0) then
+   call get_dpv_after_flag(buf, ':', .true., ref_e)
+   exit
+  end if
   if(INDEX(buf,'Reference Energy') > 0) then
-   ri = .true.
+   call get_dpv_after_flag(buf, '=', .true., ref_e)
+   ri = .true.; exit
+  end if
+  if(buf(5:18) == 'Total Energy =') then
+   call get_dpv_after_flag(buf, '=', .true., ref_e)
+   ri = .true.; dlpno = .true.
    exit
   end if
  end do ! for while
 
- if(i /= 0) then
-  write(6,'(/,A)') "ERROR in subroutine read_mp2_e_from_psi4_out: SCF energy no&
-                   &t found in file "//TRIM(outname)
-  close(fid)
-  stop
- end if
-
  if(ri) then ! RI
-  i = INDEX(buf, '=')
-  read(buf(i+1:),*) ref_e
-  do while(.true.)
-   read(fid,'(A)') buf
-   if(INDEX(buf,'Total Energy') > 0) exit
-  end do ! for while
-  i = INDEX(buf, '=')
+  if(dlpno) then
+   do while(.true.)
+    read(fid,'(A)') buf
+    if(buf(3:19) == 'Total DLPNO-MP2 C') exit
+   end do ! for while
+   call get_dpv_after_flag(buf, ':', .true., mp2_e)
+   mp2_e = mp2_e + ref_e
+  else
+   do while(.true.)
+    read(fid,'(A)') buf
+    if(INDEX(buf,'Total Energy              =') > 0) exit
+   end do ! for while
+   call get_dpv_after_flag(buf, '=', .true., mp2_e)
+  end if
  else        ! no RI
-  i = INDEX(buf, ':')
-  read(buf(i+1:),*) ref_e
   do while(.true.)
    read(fid,'(A)') buf
-   if(INDEX(buf,'=====') > 0) exit
+   if(INDEX(buf,'MP2 Total Energy (a.u.)            :') > 0) exit
   end do ! for while
-  BACKSPACE(fid)
-  BACKSPACE(fid)
-  read(fid,'(A)') buf
-  i = INDEX(buf, ':')
+  call get_dpv_after_flag(buf, ':', .true., mp2_e)
  end if
 
- read(buf(i+1:),*) mp2_e
  close(fid)
 end subroutine read_mp2_e_from_psi4_out
 

@@ -46,7 +46,6 @@ subroutine do_sa_cas()
    stop
   end if
 
-  call prt_active_space_warn(nacte_wish, nacto_wish, nacte, nacto)
   ndb = ndb - (nacte_wish - nacte)/2
   nactb = (nacte_wish - nopen)/2
   nacta = nacte_wish - nactb
@@ -185,7 +184,8 @@ end subroutine do_sa_cas
 subroutine prt_sacas_script_into_py(pyname, gvb_fch, nevpt2_btw)
  use mol, only: nacto, nacte, nacta, nactb
  use mr_keyword, only: mem, nproc, casscf, dmrgscf, xmult, given_xmult, maxM, &
-  block_mpi, hardwfn, crazywfn, RI, RIJK_bas, hf_fch, MixedSpin, nstate, nevpt2
+  FIC, block_mpi, hardwfn, crazywfn, RI, RIJK_bas, hf_fch, MixedSpin, nstate, &
+  nevpt2
  use util_wrapper, only: bas_fch2py_wrap
  implicit none
  integer :: i, nacta1, nactb1, fid1, fid2, RENAME
@@ -233,6 +233,7 @@ subroutine prt_sacas_script_into_py(pyname, gvb_fch, nevpt2_btw)
  end if
  write(fid2,'(A)') 'from mokit.lib.py2fch import py2fch'
  write(fid2,'(A)') 'from mokit.lib.excited import gen_nto_and_fosc_from_mo_tdm'
+ if(FIC) write(fid2,'(A)') 'from pyblock2.icmr.icnevpt2_full import WickICNEVPT2'
 
  do while(.true.)
   read(fid1,'(A)') buf
@@ -271,13 +272,8 @@ subroutine prt_sacas_script_into_py(pyname, gvb_fch, nevpt2_btw)
  ! mem*500 is in fact mem*1000/2. The mc.max_memory and fcisolver.max_memory seem
  ! not to share common memory, they used two memory, so I have to make them half
  if(casscf) then ! SA-CASSCF
-  write(fid2,'(3(A,I0),A)',advance='no') 'mc = mcscf.CASSCF(mf,', nacto, ',(', &
-                                          nacta1, ',', nactb1, ')'
-  if(RI) then
-   write(fid2,'(A)') ").density_fit(auxbasis='"//TRIM(RIJK_bas1)//"')"
-  else
-   write(fid2,'(A)') ')'
-  end if
+  write(fid2,'(3(A,I0),A)') 'mc = mcscf.CASSCF(mf,', nacto, ',(', nacta1, ',',&
+                            nactb1,'))'
   write(fid2,'(A,I0,A)') 'mc.max_memory = ', mem*700, ' # MB'
   write(fid2,'(A,I0,A)') 'mc.fcisolver.max_memory = ',mem*300,' # MB'
  else ! DMRG-SA-CASSCF
@@ -335,19 +331,12 @@ subroutine prt_sacas_script_into_py(pyname, gvb_fch, nevpt2_btw)
  write(fid2,'(A)') "py2fch('"//TRIM(cmofch)//"',nbf,nif,mo,'a',noon,False,False)"
 
  write(fid2,'(/,A)') '# perform multi-root CASCI'
- write(fid2,'(3(A,I0),A)',advance='no') 'mc = mcscf.CASCI(mf,', nacto, ',(', &
-                                         nacta1, ',', nactb1, ')'
-
+ write(fid2,'(3(A,I0),A)') 'mc = mcscf.CASCI(mf,', nacto, ',(', nacta1, ',', &
+                           nactb1, '))'
  if(casscf) then ! multi-root CASCI
-  if(RI) then
-   write(fid2,'(A)') ").density_fit(auxbasis='"//TRIM(RIJK_bas1)//"')"
-  else
-   write(fid2,'(A)') ')'
-  end if
   write(fid2,'(A,I0,A)') 'mc.max_memory = ', mem*700, ' # MB'
   write(fid2,'(A,I0,A)') 'mc.fcisolver.max_memory = ',mem*300,' # MB'
  else            ! multi-root DMRG-CASCI
-  write(fid2,'(A)') ')'
   write(fid2,'(A,I0,A)') 'mc.fcisolver = dmrgscf.DMRGCI(mol, maxM=',maxM,')'
   call prt_block_mem(0, fid2, mem, nproc, block_mpi)
  end if
@@ -385,7 +374,7 @@ subroutine prt_sacas_script_into_py(pyname, gvb_fch, nevpt2_btw)
   write(fid2,'(A)') "charge_center = np.einsum('z,zx->x', charges, coords)/char&
                     &ges.sum()"
   write(fid2,'(A)') 'with mol.with_common_origin(charge_center):'
-  write(fid2,'(A)') "  dip_int = mol.intor('int1e_r')"
+  write(fid2,'(4X,A)') "dip_int = mol.intor('int1e_r')"
   write(fid2,'(A)') 'nroots = mc.fcisolver.nroots'
   write(fid2,'(A)') 'nacto = mc.ncas'
   write(fid2,'(A)') 'idx1 = mc.ncore + 1'
@@ -393,34 +382,40 @@ subroutine prt_sacas_script_into_py(pyname, gvb_fch, nevpt2_btw)
   write(fid2,'(A)') 'mo_cas = mo[:,mc.ncore:idx2].copy()'
   write(fid2,'(A)') 'for i in range(1,nroots):'
   i = INDEX(cmofch, '.fch', back=.true.)
-  write(fid2,'(A)') "  part_fch = '"//cmofch(1:i-1)//"_NTO_P0'+str(i)+'.fch'"
-  write(fid2,'(A)') "  hole_fch = '"//cmofch(1:i-1)//"_NTO_H0'+str(i)+'.fch'"
-  write(fid2,'(A)') "  copyfile('"//TRIM(cmofch)//"', part_fch)"
-  write(fid2,'(A)') "  copyfile('"//TRIM(cmofch)//"', hole_fch)"
-  write(fid2,'(A)') '  tdm = mc.fcisolver.trans_rdm1(mc.ci[0],mc.ci[i], nacto, &
-                    &mc.nelecas)'
-  write(fid2,'(A)') '  ev, part_mo, hole_mo, fosc = gen_nto_and_fosc_from_mo_td&
-                    &m(nbf, nacto, mo_cas, \'
-  write(fid2,'(A)') '                               tdm, dip_int, mc.e_tot[i]-m&
-                    &c.e_tot[0])'
-  write(fid2,'(A)') '  noon[mc.ncore:idx2] = ev.copy()'
-  write(fid2,'(A)') '  mo[:,mc.ncore:idx2] = part_mo.copy()'
-  write(fid2,'(A)') "  py2fch(part_fch,nbf,nif,mo,'a',noon,False,False)"
-  write(fid2,'(A)') '  mo[:,mc.ncore:idx2] = hole_mo.copy()'
-  write(fid2,'(A)') "  py2fch(hole_fch,nbf,nif,mo,'a',noon,False,False)"
-  write(fid2,'(A)') "  print('|0> -> |%d>'%(i),', fosc =',fosc)"
+  write(fid2,'(4X,A)') "part_fch = '"//cmofch(1:i-1)//"_NTO_P0'+str(i)+'.fch'"
+  write(fid2,'(4X,A)') "hole_fch = '"//cmofch(1:i-1)//"_NTO_H0'+str(i)+'.fch'"
+  write(fid2,'(4X,A)') "copyfile('"//TRIM(cmofch)//"', part_fch)"
+  write(fid2,'(4X,A)') "copyfile('"//TRIM(cmofch)//"', hole_fch)"
+  write(fid2,'(4X,A)') 'tdm = mc.fcisolver.trans_rdm1(mc.ci[0],mc.ci[i], nacto,&
+                       & mc.nelecas)'
+  write(fid2,'(4X,A)') 'ev, part_mo, hole_mo, fosc = gen_nto_and_fosc_from_mo_t&
+                       &dm(nbf, nacto, mo_cas,'
+  write(fid2,'(43X,A)') 'tdm, dip_int, mc.e_tot[i]-mc.e_tot[0])'
+  write(fid2,'(4X,A)') 'noon[mc.ncore:idx2] = ev.copy()'
+  write(fid2,'(4X,A)') 'mo[:,mc.ncore:idx2] = part_mo.copy()'
+  write(fid2,'(4X,A)') "py2fch(part_fch,nbf,nif,mo,'a',noon,False,False)"
+  write(fid2,'(4X,A)') 'mo[:,mc.ncore:idx2] = hole_mo.copy()'
+  write(fid2,'(4X,A)') "py2fch(hole_fch,nbf,nif,mo,'a',noon,False,False)"
+  write(fid2,'(4X,A)') "print('|0> -> |%d>'%(i),', fosc =',fosc)"
  end if
 
  if(nevpt2 .and. nevpt2_btw) then
   if(dmrgscf) then
    write(fid2,'(/,A)') '# State-specific DMRG-NEVPT2 based on multi-root DMRG-C&
                        &ASCI'
-   call prt_dmrg_nevpt2_setting(fid2)
+   call prt_dmrg_nevpt2_setting(fid2, 0, nstate, maxM, FIC)
   else
-   write(fid2,'(/,A)') '# State-specific NEVPT2 based on multi-root CASCI'
-   write(fid2,'(A,I0)') 'nstate = ', nstate
-   write(fid2,'(A)') 'for i in range(nstate+1):'
-   write(fid2,'(A)') '  mrpt.NEVPT(mc, root=i).kernel()'
+   if(FIC) then
+    write(fid2,'(/,A)') '# State-specific FIC-NEVPT2 based on multi-root CASCI'
+    write(fid2,'(A,I0)') 'nstate = ', nstate
+    write(fid2,'(A)') 'for i in range(nstate+1):'
+    write(fid2,'(4X,A)') 'WickICNEVPT2(mc, root=i).kernel()'
+   else
+    write(fid2,'(/,A)') '# State-specific SC-NEVPT2 based on multi-root CASCI'
+    write(fid2,'(A,I0)') 'nstate = ', nstate
+    write(fid2,'(A)') 'for i in range(nstate+1):'
+    write(fid2,'(4X,A)') 'mrpt.NEVPT(mc, root=i).kernel()'
+   end if
   end if
  end if
 

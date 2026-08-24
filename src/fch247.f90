@@ -9,11 +9,12 @@ program main
 
  i = iargc()
  if(i /= 1) then
-  write(6,'(/,A)') ' ERROR in program fch247: wrong command line arguments!'
+  write(6,'(/,A)') ' ERROR in program fch247: wrong command line argument!'
   write(6,'(A,/)') ' Example: fch247 a.fch'
   stop
  end if
 
+ fchname = ' '
  call getarg(1, fchname)
  call require_file_exist(fchname)
 
@@ -32,7 +33,7 @@ subroutine fch247(fchname)
  implicit none
  integer :: i, j, k, m, nhigh, fid
  integer, allocatable :: eff_nuc_charge(:), cen_assign(:)
- real(kind=8), allocatable :: S(:,:),F(:,:),dm_a(:,:),dm_b(:,:), D(:,:,:)
+ real(kind=8), allocatable :: S(:,:), F(:,:), dm_a(:,:), dm_b(:,:), D(:,:,:)
  character(len=1), parameter :: l_str(0:5) = ['S','P','D','F','G','H']
  character(len=240) :: f47
  character(len=240), intent(in) :: fchname
@@ -171,13 +172,9 @@ subroutine fch247(fchname)
  if(nbf == nif) then
   call solve_ovlp_from_cct(nbf, alpha_coeff, S)
  else
-  write(6,'(/,A)') 'ERROR in subroutine fch247: nbf/=nif, linear dependence&
-                  & detected.'
-  write(6,'(A)') 'Solving overlap integrals not supported currently.'
-  stop
+  call get_ao_ovlp_using_fch(fchname, nbf, S)
  end if
  write(fid,'(2X,5E15.7)') ((S(j,i),j=1,i),i=1,nbf)
- deallocate(S)
  write(fid,'(A)') ' $END'
 
  write(fid,'(A)') ' $DENSITY'
@@ -206,13 +203,20 @@ subroutine fch247(fchname)
 
  write(fid,'(A)') ' $FOCK'
  allocate(F(nbf,nbf))
- call solve_fock_from_ctfc(nbf, nif, alpha_coeff, eigen_e_a, F)
+ if(nbf == nif) then
+  call calc_fock_from_ces(nbf, nif, alpha_coeff, eigen_e_a, S, F)
+ else
+  write(6,'(/,A)') 'ERROR in subroutine fch247: basis set linear dependency det&
+                   &ected. The'
+  write(6,'(A)') 'AO Fock matrix cannot be calculated using C, E, S matrices.'
+  stop
+ end if
  write(fid,'(2X,5E15.7)') ((F(j,i),j=1,i),i=1,nbf)
  if(uhf) then
-  call solve_fock_from_ctfc(nbf, nif, beta_coeff, eigen_e_b, F)
+  call calc_fock_from_ces(nbf, nif, beta_coeff, eigen_e_b, S, F)
   write(fid,'(2X,5E15.7)') ((F(j,i),j=1,i),i=1,nbf)
  end if
- deallocate(F)
+ deallocate(S, F)
  write(fid,'(A)') ' $END'
 
  write(fid,'(A)') ' $LCAOMO'
@@ -220,14 +224,16 @@ subroutine fch247(fchname)
  if(uhf) write(fid,'(2X,5E15.7)') beta_coeff
  write(fid,'(A)') ' $END'
 
-! write(fid,'(A)') ' $DIPOLE'
-! allocate(D(nbf,nbf,3))
-! call calc_dipole_mat_using_fch(fchname, nbf, D)
-! do i = 1, 3
-!  write(fid,'(2X,5E15.7)') ((D(k,j,i),k=1,j),j=1,nbf)
-! end do ! for i
-! deallocate(D)
-! write(fid,'(A)') ' $END'
+ write(fid,'(A)') ' $DIPOLE'
+ allocate(D(nbf,nbf,3))
+ call get_gau_ao_dip_from_pyscf(fchname, nbf, D)
+ D = D*Bohr_const
+
+ do i = 1, 3
+  write(fid,'(2X,5E15.7)') ((D(k,j,i),k=1,j),j=1,nbf)
+ end do ! for i
+ deallocate(D)
+ write(fid,'(A)') ' $END'
 
  close(fid)
 end subroutine fch247

@@ -56,6 +56,91 @@ subroutine read_hf_e_and_ss_from_gau_log(logname, first, e, ss)
  close(fid)
 end subroutine read_hf_e_and_ss_from_gau_log
 
+! read spin multiplicity from a PSI4 output file
+subroutine read_mult_from_psi4_out(outname, mult)
+ implicit none
+ integer :: i, fid
+ integer, intent(out) :: mult
+ character(len=240) :: buf
+ character(len=240), intent(in) :: outname
+
+ open(newunit=fid,file=TRIM(outname),status='old',position='rewind')
+ do while(.true.)
+  read(fid,'(A)',iostat=i) buf
+  if(i /= 0) exit
+  if(buf(3:14) == 'Multiplicity') exit
+ end do ! for while
+
+ close(fid)
+ if(i /= 0) then
+  write(6,'(/,A)') 'ERROR in subroutine read_mult_from_psi4_out: `Multiplicity`&
+                   & not found in file'
+  write(6,'(A)') TRIM(outname)
+  stop
+ end if
+
+ call get_int_after_flag(buf, '=', .false., mult)
+end subroutine read_mult_from_psi4_out
+
+! read HF/DFT electronic energy from a PSI4 .out file
+subroutine read_scf_e_and_ss_from_psi4_out(outname, hf_type, e, ssquare)
+ implicit none
+ integer :: mult, fid
+ integer, intent(in) :: hf_type
+ real(kind=8), intent(out) :: e, ssquare
+ character(len=53), parameter :: error_warn = 'ERROR in subroutine read_scf_e_a&
+                                              &nd_ss_from_psi4_out: '
+ character(len=240) :: buf
+ character(len=240), intent(in) :: outname
+
+ e = 0d0; ssquare = 0d0
+ open(newunit=fid,file=TRIM(outname),status='old',position='append')
+
+ ! There are two HF energies in this file, we should begin from the end of file
+ do while(.true.)
+  BACKSPACE(fid)
+  BACKSPACE(fid)
+  read(fid,'(A)') buf
+  if(buf(11:23) == 'Psi4: An Open') then
+   close(fid)
+   write(6,'(/,A)') error_warn//'SCF energy not found in file'
+   write(6,'(A)') TRIM(outname)
+   stop
+  end if
+  if(buf(5:18) == 'Total Energy =') exit
+ end do ! for while
+
+ call get_dpv_after_flag(buf, ':', .true., e)
+
+ select case(hf_type)
+ case(1) ! RHF
+  close(fid)
+  ssquare = 0d0
+ case(2) ! ROHF
+  close(fid)
+  call read_mult_from_psi4_out(outname, mult)
+  ssquare = 0.25d0*DBLE(mult*mult-1)
+ case(3) ! UHF
+  do while(.true.)
+   BACKSPACE(fid)
+   BACKSPACE(fid)
+   read(fid,'(A)') buf
+   if(buf(11:23) == 'Psi4: An Open') then
+    close(fid)
+    write(6,'(/,A)') error_warn//'`S^2 Observed` not found in file'
+    write(6,'(A)') TRIM(outname)
+    stop
+   end if
+   if(buf(5:16) == 'S^2 Observed') exit
+  end do ! for while
+  close(fid)
+  call get_dpv_after_flag(buf, ':', .false., ssquare)
+ case default
+  write(6,'(A,I0)') error_warn//'invalid hf_type = ', hf_type
+  stop
+ end select
+end subroutine read_scf_e_and_ss_from_psi4_out
+
 ! read SCF electronic energy from a CP2K output file
 subroutine read_scf_e_from_cp2k_out(outname, scf_e)
  implicit none
@@ -1384,6 +1469,8 @@ subroutine read_cas_energy_from_dalton_out(outname, e, scf)
  integer :: i, fid
  real(kind=8), intent(out) :: e(2)
  character(len=1) :: str
+ character(len=53), parameter :: error_warn = 'ERROR in subroutine read_cas_ene&
+                                              &rgy_from_dalton_out: '
  character(len=240) :: buf
  character(len=240), intent(in) :: outname
  logical, intent(in) :: scf
@@ -1398,9 +1485,8 @@ subroutine read_cas_energy_from_dalton_out(outname, e, scf)
  end do ! for while
 
  if(i /= 0) then
-  write(6,'(/,A)') "ERROR in subroutine read_cas_energy_from_dalton_out: no '@ &
-                   &Final CI energies' found"
-  write(6,'(A)') 'in file '//TRIM(outname)
+  write(6,'(/,A)') error_warn//'"@ Final CI energies" not'
+  write(6,'(A)') 'found in file '//TRIM(outname)
   close(fid)
   stop
  end if
@@ -1418,9 +1504,8 @@ subroutine read_cas_energy_from_dalton_out(outname, e, scf)
  end do ! for while
 
  if(i /= 0) then
-  write(6,'(/,A)') "ERROR in subroutine read_cas_energy_from_dalton_out: no &
-                   &'@    Final MCSCF en' found"
-  write(6,'(A)') 'in file '//TRIM(outname)
+  write(6,'(/,A)') error_warn//'"@    Final MCSCF en" not'
+  write(6,'(A)') 'found in file '//TRIM(outname)
   close(fid)
   stop
  end if
@@ -1524,71 +1609,83 @@ subroutine read_mrpt_energy_from_gau_log(outname, ref_e, corr_e)
 end subroutine read_mrpt_energy_from_gau_log
 
 ! read NEVPT2 energy from PySCF output file
-subroutine read_mrpt_energy_from_pyscf_out(outname, troot, ref_e, corr_e)
+subroutine read_mrpt_energy_from_pyscf_out(outname, target_root, ssquare, ref_e,&
+                                           corr_e)
  implicit none
  integer :: i, k, fid
- integer, intent(in) :: troot ! 0 for the ground state, >0 for excited state
+ integer, intent(in) :: target_root ! 0 for the ground state, >0 for excited state
+ character(len=53), parameter :: error_warn = 'ERROR in subroutine read_mrpt_en&
+                                              &ergy_from_pyscf_out: '
  character(len=240) :: buf
  character(len=240), intent(in) :: outname
- real(kind=8), intent(out) :: ref_e, corr_e
+ real(kind=8), intent(out) :: ssquare, ref_e, corr_e
+ ! ssquare: CASCI <S^2>
 
- ref_e = 0d0; corr_e = 0d0
+ ssquare = 0d0; ref_e = 0d0; corr_e = 0d0
  open(newunit=fid,file=TRIM(outname),status='old',position='append')
 
  do while(.true.)
-  BACKSPACE(fid,iostat=i)
-  if(i /= 0) exit
-  BACKSPACE(fid,iostat=i)
-  if(i /= 0) exit
+  BACKSPACE(fid)
+  BACKSPACE(fid)
+  if(buf(1:7) == 'SCF ene') then
+   i = -1; exit
+  end if
   read(fid,'(A)',iostat=i) buf
   if(i /= 0) exit
-  if(buf(1:8) == 'Nevpt2 E') exit
+  if(buf(1:8) == 'Nevpt2 E') then
+   call get_dpv_after_flag(buf, '=', .true., corr_e)
+   exit
+  end if
+  if(buf(1:17) == 'E(WickICNEVPT2) =') then
+   call get_dpv_after_flag(buf, '=', .false., corr_e)
+   exit
+  end if
  end do ! for while
 
  if(i /= 0) then
-  write(6,'(/,A)') "ERROR in subroutine read_mrpt_energy_from_pyscf_out: no 'Ne&
-                   &vpt2 E' found in"
-  write(6,'(A)') 'file '//TRIM(outname)
+  write(6,'(/,A)') error_warn//'neither `Nevpt2 E` nor `E(WickICNEVPT2) =`'
+  write(6,'(A)') 'is found in file '//TRIM(outname)
   close(fid)
   stop
  end if
- call get_dpv_after_flag(buf, '=', .true., corr_e)
 
- if(troot == 0) then
+ if(target_root == 0) then
   do while(.true.)
-   BACKSPACE(fid,iostat=i)
-   if(i /= 0) exit
-   BACKSPACE(fid,iostat=i)
-   if(i /= 0) exit
+   BACKSPACE(fid)
+   BACKSPACE(fid)
+   if(buf(1:7) == 'SCF ene') then
+    i = -1; exit
+   end if
    read(fid,'(A)',iostat=i) buf
    if(i /= 0) exit
    if(buf(1:7) == 'CASCI E') exit
   end do ! for while
  else
   do while(.true.)
-   BACKSPACE(fid,iostat=i)
-   if(i /= 0) exit
-   BACKSPACE(fid,iostat=i)
-   if(i /= 0) exit
+   BACKSPACE(fid)
+   BACKSPACE(fid)
+   if(buf(1:7) == 'SCF ene') then
+    i = -1; exit
+   end if
    read(fid,'(A)',iostat=i) buf
    if(i /= 0) exit
    if(buf(1:11) == 'CASCI state') then
     read(buf(12:),*) k
-    if(k == troot) exit
+    if(k == target_root) exit
    end if
   end do ! for while
  end if
 
  close(fid)
  if(i /= 0) then
-  write(6,'(/,A)') 'ERROR in subroutine read_mrpt_energy_from_pyscf_out: no CAS&
-                   &CI energy found'
-  write(6,'(A)') 'in file '//TRIM(outname)
-  write(6,'(A,I0)') 'troot=', troot
+  write(6,'(/,A)') error_warn//'no CASCI energy found in file'
+  write(6,'(A)') TRIM(outname)
+  write(6,'(A,I0)') 'target_root=', target_root
   stop
  end if
 
  call get_dpv_after_flag(buf, '=', .true., ref_e)
+ call get_dpv_after_flag(buf, '=', .false., ssquare)
 end subroutine read_mrpt_energy_from_pyscf_out
 
 ! read CASTP2 energy from OpenMolcas output file

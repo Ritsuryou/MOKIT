@@ -26,7 +26,7 @@ Negligible energy loss(usually<1e-6 a.u., for the same wave function method in t
 
 Note that although MOKIT aims to make the multi-reference calculations black-box, the users are still required to have practical experiences of quantum chemistry computations, e.g. familiar with routine DFT calculations in [Gaussian](https://gaussian.com). You are encouraged to learn how to use Gaussian if you are a fresh hand.
 
-Aug 18, 2026
+Aug 23, 2026
 
 Dependencies
 ------------
@@ -175,7 +175,6 @@ TODO
 ----
 * MOs transferring among BAGEL, COLUMBUS, etc.
 
-* Develop/Implement robust black-box strategies of excited state calculations
 
 Citation
 --------

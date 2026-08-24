@@ -6,15 +6,17 @@ subroutine do_mcpdft()
  use mr_keyword, only: mem, nproc, casci, dmrgci, dmrgscf, mcpdft, mcpdft_prog,&
   casnofch, molcas_omp, molcas_path, bgchg, chgname, check_gms_path, gms_path, &
   gms_scr_path, gms_dat_path, n_otpdf, otpdf, mcpdft_force, eist
- use mol, only: nacte, nacto, ptchg_e, mcpdft_e, natom, grad
+ use mol, only: nacte, nacto, ptchg_e, casci_e, casscf_e, mcpdft_e, natom, grad
  use util_wrapper, only: bas_fch2py_wrap, add_bgcharge2inp_wrap, fch2inp_wrap, &
   fch2inporb_wrap
  implicit none
  integer :: i, RENAME
- real(kind=8) :: ref_e
+ real(kind=8) :: ref_e, cas_e, ssquare
+ real(kind=8), parameter :: diff_thres = 1d-4
  real(kind=8), allocatable :: otpdf_e(:)
  character(len=10), allocatable :: split_otpdf(:)
  character(len=24) :: data_string
+ character(len=31), parameter :: error_warn = 'ERROR in subroutine do_mcpdft: '
  character(len=240) :: fname(2), inpname, outname, cmofch
  logical :: dmrg
 
@@ -24,28 +26,30 @@ subroutine do_mcpdft()
  dmrg = (dmrgci .or. dmrgscf)
 
  if(dmrg) then
-  if(mcpdft_prog == 'gamess') then
-   write(6,'(/,A)') 'ERROR in subroutine do_mcpdft: DMRG-PDFT has not been impl&
-                    &emented in GAMESS.'
-   write(6,'(A)') 'You can set MCPDFT_prog=PySCF or OpenMolcas in mokit{}.'
+  if(TRIM(mcpdft_prog) == 'gamess') then
+   write(6,'(/,A)') error_warn//'DMRG-PDFT has not been implemented in GAMESS.'
+   write(6,'(A)') 'You can use MCPDFT_prog=PySCF or OpenMolcas in mokit{}.'
    stop
   end if
+  ! For DMRG-PDFT, use input orbitals or pseudo-canonical MOs rather than NOs
+  call find_specified_suffix(casnofch, '_NO', i)
+  cmofch = casnofch(1:i-1)//'_CMO.fch'
+  casnofch = cmofch
   if(dmrgci) then
    write(6,'(A)') 'DMRG-PDFT based on DMRG-CASCI orbitals.'
   else
    write(6,'(A)') 'DMRG-PDFT based on DMRG-CASSCF orbitals.'
   end if
-  write(6,'(A,2(I0,A))') 'DMRG-PDFT(', nacte, 'e,', nacto, &
-                         'o) using program OpenMolcas'
+  write(6,'(A)',advance='no') 'DMRG-PDFT('
  else
   if(casci) then
    write(6,'(A)') 'MC-PDFT based on CASCI orbitals.'
   else
    write(6,'(A)') 'MC-PDFT based on CASSCF orbitals.'
   end if
-  write(6,'(A,2(I0,A))') 'MC-PDFT(',nacte,'e,',nacto,'o) using program '//&
-                         TRIM(mcpdft_prog)
+  write(6,'(A)',advance='no') 'MC-PDFT('
  end if
+ write(6,'(2(I0,A))') nacte,'e,',nacto,'o) using program '//TRIM(mcpdft_prog)
 
  if(dmrgci .or. casci) then
   write(6,'(A)') REPEAT('-',79)
@@ -54,13 +58,9 @@ subroutine do_mcpdft()
   write(6,'(A)') 'PDFT, unless it is too time-consuming or the input orbitals&
                  & have been optimized.'
   write(6,'(A)') REPEAT('-',79)
- end if
-
- ! For DMRG-PDFT, use input orbitals or pseudo-canonical MOs rather than NOs
- if(dmrg) then
-  i = INDEX(casnofch, '_NO', back=.true.)
-  cmofch = casnofch(1:i)//'CMO.fch'
-  casnofch = cmofch
+  cas_e = casci_e
+ else
+  cas_e = casscf_e
  end if
 
  ! split multiple on-top pair density functionals, n_otpdf >= 1
@@ -76,7 +76,7 @@ subroutine do_mcpdft()
   call prt_mcpdft_script_into_py(inpname, n_otpdf, split_otpdf)
   if(bgchg) call add_bgcharge2inp_wrap(chgname, inpname)
   call submit_pyscf_job(inpname, .true.)
-  call read_mcpdft_e_from_pyscf_out(outname, n_otpdf, ref_e, otpdf_e)
+  call read_mcpdft_e_from_pyscf_out(outname, n_otpdf, ssquare, ref_e, otpdf_e)
 
  case('openmolcas')
   call check_exe_exist(molcas_path)
@@ -91,8 +91,7 @@ subroutine do_mcpdft()
 
  case('gamess')
   if(n_otpdf > 1) then
-   write(6,'(/,A)') 'ERROR in subroutine do_mcpdft: multiple on-top pair densit&
-                    &y functional is'
+   write(6,'(/,A)') error_warn//'multiple on-top pair density functional is'
    write(6,'(A)') 'not supported when MCPDFT_prog=GAMESS. You can use MCPDFT_pr&
                   &og=PySCF/OpenMolcas.'
    stop
@@ -114,8 +113,7 @@ subroutine do_mcpdft()
   call read_mcpdft_e_from_gms_gms(outname, ref_e, otpdf_e(1))
 
  case default
-  write(6,'(/,A)') 'ERROR in subroutine do_mcpdft: invalid MCPDFT_prog='//&
-                   TRIM(mcpdft_prog)
+  write(6,'(/,A)') error_warn//'invalid MCPDFT_prog='//TRIM(mcpdft_prog)
   stop
  end select
 
@@ -125,7 +123,14 @@ subroutine do_mcpdft()
  end if
  mcpdft_e = otpdf_e(1)
 
- write(6,'(/,A,F18.8,A)')'E(ref)      = ',    ref_e, ' a.u.'
+ write(6,'(/,A,F18.8,A)') 'E(ref)      = ',    ref_e, ' a.u.'
+ if(DABS(ref_e - cas_e) > diff_thres) then
+  write(6,'(/,A)') error_warn//'the CASCI energy within MC-PDFT is different'
+  write(6,'(A)') 'from the energy of previous CASCI/CASSCF calculation. Please &
+                 &check which'
+  write(6,'(A)') 'calculation is converged to a wrong spin state.'
+  stop
+ end if
  ! the energy of the 1st on-top pair density function is printed here
  if(dmrg) then
   write(6,'(A,F18.8,A)') 'E(DMRG-PDFT)= ', mcpdft_e, ' a.u.'
@@ -140,7 +145,6 @@ subroutine do_mcpdft()
 
  if(mcpdft_force) then
   allocate(grad(3*natom))
-
   select case(TRIM(mcpdft_prog))
   case('pyscf')
    call read_grad_from_pyscf_out(outname, natom, grad)
@@ -187,15 +191,16 @@ subroutine split_str_otpdf(otpdf, n_otpdf, split_otpdf)
  split_otpdf(k) = TRIM(buf)
 end subroutine split_str_otpdf
 
-! print MC-PDFT or DMRG-PDFT keywords into PySCF .py file
-! TODO: DMRG-PDFT using PySCF+Block2
+! print MC-PDFT or DMRG-PDFT keywords into PySCF .py script
 subroutine prt_mcpdft_script_into_py(inpname, n_otpdf, split_otpdf)
- use mol, only: nacto, nacta, nactb
- use mr_keyword, only: mem, nproc, dmrgci, dmrgscf, mcpdft_force
+ use mol, only: mult, nacto, nacta, nactb
+ use mr_keyword, only: mem, nproc, hardwfn, crazywfn, RI, RIJK_bas, iroot, &
+  xmult, dmrgci, dmrgscf, block_mpi, maxM, mcpdft_force
  implicit none
  integer :: i, fid, fid1, RENAME
  integer, intent(in) :: n_otpdf
  character(len=10), intent(in) :: split_otpdf(n_otpdf)
+ character(len=21) :: RIJK_bas1
  character(len=240) :: buf, inpname1
  character(len=240), intent(in) :: inpname
  character(len=10), allocatable :: new_otpdf(:)
@@ -214,12 +219,18 @@ subroutine prt_mcpdft_script_into_py(inpname, n_otpdf, split_otpdf)
  do i = 1, 3
   read(fid,'(A)') buf
   if(buf(1:17) == 'from pyscf import') then
-   buf = TRIM(buf)//', mcpdft'
+   if(dmrg) then
+    buf = TRIM(buf)//', dmrgscf, mcpdft'
+   else
+    buf = TRIM(buf)//', mcpdft'
+   end if
    write(fid1,'(A)') TRIM(buf)
    exit
   end if
   write(fid1,'(A)') TRIM(buf)
  end do ! for i
+
+ if(.not. dmrg) write(fid1,'(A)') 'from mokit.lib.auto import casci_wrapper'
 
  do while(.true.)
   read(fid,'(A)') buf
@@ -239,6 +250,10 @@ subroutine prt_mcpdft_script_into_py(inpname, n_otpdf, split_otpdf)
  end do ! for while
 
  write(fid1,'(A,I0,A)') 'mf.max_memory = ', mem*1000, ' # MB'
+ if(RI) then
+  call auxbas_convert(RIJK_bas, RIJK_bas1, 1)
+  write(fid1,'(A)') "mf = mf.density_fit(auxbasis='"//TRIM(RIJK_bas1)//"')"
+ end if
  write(fid1,'(A)') TRIM(buf)
 
  do while(.true.)
@@ -246,14 +261,36 @@ subroutine prt_mcpdft_script_into_py(inpname, n_otpdf, split_otpdf)
   if(i /= 0) exit
   write(fid1,'(A)') TRIM(buf)
  end do ! for while
- close(fid,status='delete')
+ close(fid, status='delete')
 
- write(fid1,'(3(A,I0),A)') "mc = mcpdft.CASCI(mf,'"//TRIM(new_otpdf(1))//&
-                           "',",nacto,',(',nacta,',',nactb,'))'
- write(fid1,'(A)') 'mc.grids.atom_grid = (99,590) # ultrafine'
- write(fid1,'(A,I0,A)') 'mc.max_memory = ',mem*1000,' # MB'
- write(fid1,'(A)') 'mc.verbose = 5'
- write(fid1,'(A)') 'mc.kernel()'
+ if(dmrg) then ! DMRG-PDFT
+  write(fid1,'(3(A,I0),A)') "mc = mcpdft.CASCI(mf,'"//TRIM(new_otpdf(1))//&
+                            "',",nacto,',(',nacta,',',nactb,'))'
+  write(fid1,'(A)') 'mc.grids.atom_grid = (99,590) # ultrafine'
+  write(fid1,'(A,I0,A)') 'mc.fcisolver = dmrgscf.DMRGCI(mol, maxM=',maxM,')'
+  call prt_block_mem(0, fid1, mem, nproc, block_mpi)
+  if(iroot > 0) write(fid1,'(A,I0,A)') 'mc = mc.state_specific_(',iroot,')'
+  write(fid1,'(A)') 'mc.verbose = 5'
+  write(fid1,'(A)') 'mc.kernel()'
+ else          ! MC-PDFT
+  write(fid1,'(3(A,I0),A)',advance='no') 'mc = casci_wrapper(mf,',nacto,',(',&
+                                         nacta, ',', nactb, ')'
+  if(iroot > 0) then
+   write(fid1,'(A,I0)',advance='no') ', iroot=', iroot
+   if(xmult /= mult) write(fid1,'(A,I0)',advance='no') ', mult=', xmult
+  end if
+  write(fid1,'(A)',advance='no') ', natorb=False'
+  if(hardwfn) write(fid1,'(A)',advance='no') ', HardWFN=True'
+  if(crazywfn) write(fid1,'(A)',advance='no') ', CrazyWFN=True'
+  write(fid1,'(A)') ')'
+  write(fid1,'(A)') 'ci0 = mc.ci'
+  write(fid1,'(3(A,I0),A)') "mc = mcpdft.CASCI(mf,'"//TRIM(new_otpdf(1))//&
+                            "',",nacto,',(',nacta,',',nactb,'))'
+  write(fid1,'(A)') 'mc.grids.atom_grid = (99,590) # ultrafine'
+  write(fid1,'(A,I0,A)') 'mc.max_memory = ',mem*1000,' # MB'
+  write(fid1,'(A)') 'mc.verbose = 5'
+  write(fid1,'(A)') 'mc.kernel(ci0=ci0)'
+ end if
 
  do i = 2, n_otpdf, 1
   write(fid1,'(A)') "mc.compute_pdft_energy_(otxc='"//TRIM(new_otpdf(i))//"')"
@@ -534,17 +571,32 @@ subroutine detect_and_update_otpdf_molcas(n_otpdf, split_otpdf, key)
  end if
 end subroutine detect_and_update_otpdf_molcas
 
-! read MC-PDFT energy from a given PySCF/OpenMolcas/GAMESS output file
-subroutine read_mcpdft_e_from_pyscf_out(outname, n_otpdf, ref_e, pdft_e)
+! Locate '^CASCI E' in a given PySCF output file.
+subroutine locate_casci_e_in_pyscf_out(outname, reopen, close_when_return, &
+                                       casci_e, ssquare)
  implicit none
- integer :: i, k, fid
- integer, intent(in) :: n_otpdf
- real(kind=8), intent(out) :: ref_e, pdft_e(n_otpdf)
+ integer :: i, fid
+ real(kind=8), intent(out) :: casci_e, ssquare
+ character(len=49), parameter :: error_warn = 'ERROR in subroutine locate_casci&
+                                              &_e_in_pyscf_out: '
  character(len=240) :: buf
  character(len=240), intent(in) :: outname
+ logical :: alive
+ logical, intent(in) :: reopen, close_when_return
 
- ref_e = 0d0; pdft_e = 0d0
- open(newunit=fid,file=TRIM(outname),status='old',position='rewind')
+ casci_e = 0d0; ssquare = 0d0
+ inquire(file=TRIM(outname),opened=alive,number=fid)
+
+ if(reopen) then
+  if(alive) close(fid)
+  open(newunit=fid,file=TRIM(outname),status='old',position='rewind')
+ else
+  if(.not. alive) then
+   write(6,'(/,A)') error_warn//'inconsistent paramters.'
+   write(6,'(A)') 'reopen=.F. but the file is not opened. file='//TRIM(outname)
+   stop
+  end if
+ end if
 
  do while(.true.)
   read(fid,'(A)',iostat=i) buf
@@ -553,15 +605,35 @@ subroutine read_mcpdft_e_from_pyscf_out(outname, n_otpdf, ref_e, pdft_e)
  end do ! for while
 
  if(i /= 0) then
-  write(6,'(/,A)') "ERROR in subroutine read_mcpdft_e_from_pyscf_out: no 'CASCI&
-                   & E' found in"
-  write(6,'(A)') 'file '//TRIM(outname)
+  write(6,'(/,A)') error_warn//'no `CASCI E` found in file'
+  write(6,'(A)') TRIM(outname)
   close(fid)
   stop
  end if
 
- i = INDEX(buf, '=')
- read(buf(i+1:),*) ref_e
+ call get_dpv_after_flag(buf, '=', .true., casci_e)
+ call get_dpv_after_flag(buf, '=', .false., ssquare)
+ if(close_when_return) close(fid)
+end subroutine locate_casci_e_in_pyscf_out
+
+! read MC-PDFT energy from a given PySCF/OpenMolcas/GAMESS output file
+subroutine read_mcpdft_e_from_pyscf_out(outname, n_otpdf, ssquare, ref_e, pdft_e)
+ implicit none
+ integer :: i, k, fid
+ integer, intent(in) :: n_otpdf
+ real(kind=8), intent(out) :: ssquare, ref_e, pdft_e(n_otpdf)
+ ! ssquare: CASCI <S^2>
+ character(len=240) :: buf
+ character(len=240), intent(in) :: outname
+
+ pdft_e = 0d0
+ open(newunit=fid,file=TRIM(outname),status='old',position='rewind')
+ call locate_casci_e_in_pyscf_out(outname, .false., .false., ref_e, ssquare)
+
+ read(fid,'(A)') buf
+ if(buf(1:23) == 'Remark from MOKIT casci') then
+  call locate_casci_e_in_pyscf_out(outname, .false., .false., ref_e, ssquare)
+ end if
 
  do i = 1, n_otpdf, 1
   do while(.true.)
@@ -578,8 +650,7 @@ subroutine read_mcpdft_e_from_pyscf_out(outname, n_otpdf, ref_e, pdft_e)
    stop
   end if
 
-  k = INDEX(buf, '=')
-  read(buf(k+1:),*) pdft_e(i)
+  call get_dpv_after_flag(buf, '=', .true., pdft_e(i))
  end do ! for i
 
  close(fid)
